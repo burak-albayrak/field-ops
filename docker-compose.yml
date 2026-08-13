@@ -1,0 +1,48 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: fieldops-postgres
+    env_file:
+      - .env
+    ports:
+      # 15432 ana makinedeki diğer PostgreSQL projeleriyle çakışmaz; konteyner içi standart port 5432 kalır.
+      - "15432:5432"
+    volumes:
+      # Named volume, konteyner yeniden oluşturulsa bile veritabanı verisini korur.
+      - fieldops_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      # Uygulamanın bağlanmadan önce veritabanının istek kabul ettiğini doğrular.
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  backend:
+    container_name: fieldops-backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      # Tek instance Docker geliştirmede migration otomatik uygulanır; production'da kontrollü bir migration adımı kullanılacaktır.
+      Database__ApplyMigrations: "true"
+      # Demo veri yalnızca Development ve bu açık bayrak birlikteyken seed edilir.
+      DemoData__Enabled: "true"
+      # Konteynerde 8080 kullanmak, hosttaki 18080 eşlemesiyle proje portlarını ayırır.
+      ASPNETCORE_URLS: http://+:8080
+      # Backend konteynerinden veritabanı Compose servis adıyla erişilir; localhost burada backend konteynerini ifade eder.
+      # ASP.NET Core, ConnectionStrings__DefaultConnection adını GetConnectionString("DefaultConnection") olarak bağlar.
+      # Gerçek parola kaynakta değil, Git tarafından yok sayılan yerel .env dosyasından gelir.
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+    ports:
+      - "18080:8080"
+    depends_on:
+      # Backend ileride veritabanına bağlanacağından, PostgreSQL istek kabul edene kadar başlamaz.
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  fieldops_postgres_data:
