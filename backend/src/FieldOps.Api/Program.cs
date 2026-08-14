@@ -1,5 +1,11 @@
+using FieldOps.Application.Abstractions.Persistence;
+using FieldOps.Application.Visits;
+using FieldOps.Api.ExceptionHandling;
 using FieldOps.Infrastructure.Persistence;
+using FieldOps.Infrastructure.Persistence.Repositories;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Mvc;
+using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -12,11 +18,39 @@ if (string.IsNullOrWhiteSpace(connectionString))
 }
 
 builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
+builder.Services.AddScoped<IEmployeeRepository, EmployeeRepository>();
+builder.Services.AddScoped<IStoreRepository, StoreRepository>();
+builder.Services.AddScoped<IVisitRepository, VisitRepository>();
+// Repository'nin Add ile takip ettiği entity ile SaveChanges aynı scoped AppDbContext örneğinde buluşmalıdır.
+builder.Services.AddScoped<IUnitOfWork>(serviceProvider => serviceProvider.GetRequiredService<AppDbContext>());
+builder.Services.AddScoped<IVisitService, VisitService>();
 
-builder.Services.AddControllers();
+builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+builder.Services.AddControllers()
+    .AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+builder.Services.Configure<ApiBehaviorOptions>(options =>
+{
+    options.InvalidModelStateResponseFactory = actionContext =>
+    {
+        var problemDetails = new ValidationProblemDetails(actionContext.ModelState)
+        {
+            Status = StatusCodes.Status400BadRequest,
+            Title = "Validation failed"
+        };
+        problemDetails.Extensions["code"] = "validation_error";
+
+        return new BadRequestObjectResult(problemDetails)
+        {
+            ContentTypes = { "application/problem+json" }
+        };
+    };
+});
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
+
+app.UseExceptionHandler();
 
 if (app.Environment.IsDevelopment())
 {
@@ -49,3 +83,8 @@ if (!app.Environment.IsDevelopment())
 app.MapControllers();
 
 app.Run();
+
+// Bu partial bildirim, minimal-hosting giriş noktasını çalışma zamanını değiştirmeden WebApplicationFactory testlerine açar.
+public partial class Program
+{
+}
