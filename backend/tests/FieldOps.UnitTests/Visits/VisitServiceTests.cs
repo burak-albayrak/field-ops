@@ -1,4 +1,5 @@
 using FieldOps.Application.Abstractions.Persistence;
+using FieldOps.Application.Abstractions.Outbox;
 using FieldOps.Application.Common.Exceptions;
 using FieldOps.Application.Visits;
 using FieldOps.Application.Visits.Models;
@@ -209,13 +210,18 @@ public class VisitServiceTests
     public async Task CompleteAsync_throws_when_visit_is_missing_without_saving()
     {
         var unitOfWork = new UnitOfWorkFake();
-        var service = CreateService(new VisitRepositoryFake(), unitOfWork: unitOfWork);
+        var outboxWriter = new OutboxWriterFake();
+        var service = CreateService(
+            new VisitRepositoryFake(),
+            unitOfWork: unitOfWork,
+            outboxWriter: outboxWriter);
 
         var exception = await Assert.ThrowsAsync<VisitNotFoundException>(
             () => service.CompleteAsync(42, new CompleteVisitInput("Notes")));
 
         Assert.Equal(42, exception.VisitId);
         Assert.Equal(0, unitOfWork.SaveChangesCallCount);
+        Assert.Empty(outboxWriter.Events);
     }
 
     [Fact]
@@ -225,7 +231,11 @@ public class VisitServiceTests
         var expected = CreateDetail(1, VisitStatus.Completed, 3, notes: "Completed notes");
         var visitRepository = new VisitRepositoryFake { TrackedVisit = visit, Detail = expected };
         var unitOfWork = new UnitOfWorkFake();
-        var service = CreateService(visitRepository, unitOfWork: unitOfWork);
+        var outboxWriter = new OutboxWriterFake();
+        var service = CreateService(
+            visitRepository,
+            unitOfWork: unitOfWork,
+            outboxWriter: outboxWriter);
         var before = DateTime.UtcNow;
 
         var result = await service.CompleteAsync(1, new CompleteVisitInput("Completed notes"));
@@ -238,6 +248,12 @@ public class VisitServiceTests
         Assert.Equal("Completed notes", visit.Notes);
         Assert.Equal(3, visit.Version);
         Assert.Equal(1, unitOfWork.SaveChangesCallCount);
+
+        var stagedEvent = Assert.Single(outboxWriter.Events);
+        Assert.Equal(visit.Id, stagedEvent.VisitId);
+        Assert.Equal(visit.EmployeeId, stagedEvent.EmployeeId);
+        Assert.Equal(visit.StoreId, stagedEvent.StoreId);
+        Assert.Equal(visit.CompletedAt, stagedEvent.CompletedAt);
     }
 
     [Theory]
@@ -253,9 +269,11 @@ public class VisitServiceTests
         }
 
         var unitOfWork = new UnitOfWorkFake();
+        var outboxWriter = new OutboxWriterFake();
         var service = CreateService(
             new VisitRepositoryFake { TrackedVisit = visit },
-            unitOfWork: unitOfWork);
+            unitOfWork: unitOfWork,
+            outboxWriter: outboxWriter);
 
         var exception = await Assert.ThrowsAsync<InvalidVisitStateException>(
             () => service.CompleteAsync(1, new CompleteVisitInput("Notes")));
@@ -263,6 +281,7 @@ public class VisitServiceTests
         Assert.Equal(status, exception.CurrentStatus);
         Assert.Equal("Complete", exception.AttemptedOperation);
         Assert.Equal(0, unitOfWork.SaveChangesCallCount);
+        Assert.Empty(outboxWriter.Events);
     }
 
     [Fact]
@@ -280,7 +299,11 @@ public class VisitServiceTests
             "Original notes");
         var visitRepository = new VisitRepositoryFake { TrackedVisit = visit, Detail = expected };
         var unitOfWork = new UnitOfWorkFake();
-        var service = CreateService(visitRepository, unitOfWork: unitOfWork);
+        var outboxWriter = new OutboxWriterFake();
+        var service = CreateService(
+            visitRepository,
+            unitOfWork: unitOfWork,
+            outboxWriter: outboxWriter);
 
         var result = await service.CompleteAsync(1, new CompleteVisitInput("Different notes"));
 
@@ -289,6 +312,7 @@ public class VisitServiceTests
         Assert.Equal("Original notes", visit.Notes);
         Assert.Equal(3, visit.Version);
         Assert.Equal(0, unitOfWork.SaveChangesCallCount);
+        Assert.Empty(outboxWriter.Events);
     }
 
     [Fact]
@@ -306,7 +330,11 @@ public class VisitServiceTests
         var conflict = new ConcurrencyConflictException();
         var visitRepository = new VisitRepositoryFake { TrackedVisit = visit, Detail = winningDetail };
         var unitOfWork = new UnitOfWorkFake { ExceptionToThrow = conflict };
-        var service = CreateService(visitRepository, unitOfWork: unitOfWork);
+        var outboxWriter = new OutboxWriterFake();
+        var service = CreateService(
+            visitRepository,
+            unitOfWork: unitOfWork,
+            outboxWriter: outboxWriter);
 
         var result = await service.CompleteAsync(1, new CompleteVisitInput("Losing notes"));
 
@@ -316,6 +344,7 @@ public class VisitServiceTests
         Assert.Equal(3, result.Version);
         Assert.Equal(1, unitOfWork.SaveChangesCallCount);
         Assert.Equal(1, visitRepository.GetDetailCallCount);
+        Assert.Single(outboxWriter.Events);
     }
 
     [Fact]
@@ -557,13 +586,15 @@ public class VisitServiceTests
         VisitRepositoryFake visitRepository,
         EmployeeRepositoryFake? employeeRepository = null,
         StoreRepositoryFake? storeRepository = null,
-        UnitOfWorkFake? unitOfWork = null)
+        UnitOfWorkFake? unitOfWork = null,
+        OutboxWriterFake? outboxWriter = null)
     {
         return new VisitService(
             visitRepository,
             employeeRepository ?? new EmployeeRepositoryFake(),
             storeRepository ?? new StoreRepositoryFake(),
-            unitOfWork ?? new UnitOfWorkFake());
+            unitOfWork ?? new UnitOfWorkFake(),
+            outboxWriter ?? new OutboxWriterFake());
     }
 
     private static VisitDetailDto CreateDetail(
@@ -717,5 +748,38 @@ public class VisitServiceTests
 
             return Task.FromResult(1);
         }
+    }
+
+    private sealed class OutboxWriterFake : IOutboxWriter
+    {
+        public List<VisitCompletedEvent> Events { get; } = [];
+
+        public void AddVisitCompleted(
+            long visitId,
+            long employeeId,
+            long storeId,
+            DateTime completedAt)
+        {
+            Events.Add(new VisitCompletedEvent(visitId, employeeId, storeId, completedAt));
+        }
+    }
+
+    private sealed class VisitCompletedEvent
+    {
+        public VisitCompletedEvent(long visitId, long employeeId, long storeId, DateTime completedAt)
+        {
+            VisitId = visitId;
+            EmployeeId = employeeId;
+            StoreId = storeId;
+            CompletedAt = completedAt;
+        }
+
+        public long VisitId { get; }
+
+        public long EmployeeId { get; }
+
+        public long StoreId { get; }
+
+        public DateTime CompletedAt { get; }
     }
 }

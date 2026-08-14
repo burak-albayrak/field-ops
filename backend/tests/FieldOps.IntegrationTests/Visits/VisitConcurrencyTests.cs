@@ -55,6 +55,17 @@ public sealed class VisitConcurrencyTests : IntegrationTestBase
             Assert.Equal(3, persisted.Version);
             Assert.Equal(results[0].CompletedAt, persisted.CompletedAt);
             Assert.Equal(results[0].Notes, persisted.Notes);
+
+            var outbox = await ExecuteDbContextAsync(context => context.OutboxMessages
+                .AsNoTracking()
+                .SingleAsync());
+            Assert.Equal("VisitCompleted", outbox.Type);
+            using var payload = JsonDocument.Parse(outbox.Payload);
+            var payloadRoot = payload.RootElement;
+            Assert.Equal(persisted.Id, payloadRoot.GetProperty("visitId").GetInt64());
+            Assert.Equal(persisted.EmployeeId, payloadRoot.GetProperty("employeeId").GetInt64());
+            Assert.Equal(persisted.StoreId, payloadRoot.GetProperty("storeId").GetInt64());
+            Assert.Equal(persisted.CompletedAt, payloadRoot.GetProperty("completedAt").GetDateTime());
             _output.WriteLine("Complete+Complete winner notes: {0}", persisted.Notes);
         }
         finally

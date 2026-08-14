@@ -18,6 +18,8 @@ public sealed class PostgreSqlFixture : IAsyncLifetime
 
     public HttpClient Client { get; private set; } = null!;
 
+    public string ConnectionString => _postgres.GetConnectionString();
+
     public async Task InitializeAsync()
     {
         await _postgres.StartAsync();
@@ -43,7 +45,7 @@ public sealed class PostgreSqlFixture : IAsyncLifetime
 
         // Paylaşılan container'da test izolasyonu için yalnızca uygulama verisini temizleriz; migration geçmişi korunur.
         await context.Database.ExecuteSqlRawAsync(
-            "TRUNCATE TABLE visits, stores, employees RESTART IDENTITY CASCADE;");
+            "TRUNCATE TABLE outbox_messages, visits, stores, employees RESTART IDENTITY CASCADE;");
     }
 
     public async Task DisposeAsync()

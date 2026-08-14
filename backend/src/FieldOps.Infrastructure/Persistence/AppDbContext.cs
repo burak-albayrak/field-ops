@@ -2,6 +2,7 @@ using FieldOps.Application.Abstractions.Persistence;
 using FieldOps.Application.Common.Exceptions;
 using FieldOps.Domain.Entities;
 using FieldOps.Infrastructure.Persistence.Configurations;
+using FieldOps.Infrastructure.Persistence.Outbox;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 
@@ -23,6 +24,8 @@ public class AppDbContext : DbContext, IUnitOfWork
     public DbSet<Store> Stores => Set<Store>();
 
     public DbSet<Visit> Visits => Set<Visit>();
+
+    public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 
     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
@@ -57,6 +60,7 @@ public class AppDbContext : DbContext, IUnitOfWork
         modelBuilder.ApplyConfiguration(new EmployeeConfiguration());
         modelBuilder.ApplyConfiguration(new StoreConfiguration());
         modelBuilder.ApplyConfiguration(new VisitConfiguration());
+        modelBuilder.ApplyConfiguration(new OutboxMessageConfiguration());
     }
 
     private static bool IsActiveVisitUniqueViolation(DbUpdateException exception)

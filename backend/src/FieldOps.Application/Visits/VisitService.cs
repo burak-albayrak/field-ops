@@ -1,4 +1,5 @@
 using FieldOps.Application.Abstractions.Persistence;
+using FieldOps.Application.Abstractions.Outbox;
 using FieldOps.Application.Common.Exceptions;
 using FieldOps.Application.Common.Geography;
 using FieldOps.Application.Visits.Models;
@@ -15,17 +16,20 @@ public class VisitService : IVisitService
     private readonly IEmployeeRepository _employeeRepository;
     private readonly IStoreRepository _storeRepository;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IOutboxWriter _outboxWriter;
 
     public VisitService(
         IVisitRepository visitRepository,
         IEmployeeRepository employeeRepository,
         IStoreRepository storeRepository,
-        IUnitOfWork unitOfWork)
+        IUnitOfWork unitOfWork,
+        IOutboxWriter outboxWriter)
     {
         _visitRepository = visitRepository;
         _employeeRepository = employeeRepository;
         _storeRepository = storeRepository;
         _unitOfWork = unitOfWork;
+        _outboxWriter = outboxWriter;
     }
 
     public async Task<VisitDetailDto> CreateAsync(
@@ -121,7 +125,17 @@ public class VisitService : IVisitService
                 ?? throw new InvalidOperationException("The completed visit could not be retrieved.");
         }
 
-        visit.Complete(DateTime.UtcNow, input.Notes);
+        var completionTime = DateTime.UtcNow;
+        // PostgreSQL timestamptz mikro-saniye hassasiyetindedir; tek zamanı bu hassasiyete indirgemek
+        // Visit'teki değer ile immutable JSON payload'ın veritabanından okunduğunda birebir aynı kalmasını sağlar.
+        completionTime = completionTime.AddTicks(-(completionTime.Ticks % TimeSpan.TicksPerMicrosecond));
+
+        visit.Complete(completionTime, input.Notes);
+        _outboxWriter.AddVisitCompleted(
+            visit.Id,
+            visit.EmployeeId,
+            visit.StoreId,
+            completionTime);
 
         try
         {

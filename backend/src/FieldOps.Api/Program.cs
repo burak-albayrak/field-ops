@@ -1,11 +1,16 @@
 using FieldOps.Application.Abstractions.Persistence;
+using FieldOps.Application.Abstractions.Outbox;
 using FieldOps.Application.Visits;
 using FieldOps.Api.ExceptionHandling;
+using FieldOps.Api.HostedServices;
+using FieldOps.Infrastructure.Analytics;
 using FieldOps.Infrastructure.Persistence;
 using FieldOps.Infrastructure.Persistence.Repositories;
+using FieldOps.Infrastructure.Persistence.Outbox;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -21,9 +26,54 @@ builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connect
 builder.Services.AddScoped<IEmployeeRepository, EmployeeRepository>();
 builder.Services.AddScoped<IStoreRepository, StoreRepository>();
 builder.Services.AddScoped<IVisitRepository, VisitRepository>();
+builder.Services.AddScoped<IOutboxWriter, OutboxWriter>();
+builder.Services.AddScoped<OutboxRepository>();
+builder.Services.AddScoped<OutboxProcessor>();
+builder.Services.AddSingleton<OutboxRetryBackoff>();
 // Repository'nin Add ile takip ettiği entity ile SaveChanges aynı scoped AppDbContext örneğinde buluşmalıdır.
 builder.Services.AddScoped<IUnitOfWork>(serviceProvider => serviceProvider.GetRequiredService<AppDbContext>());
 builder.Services.AddScoped<IVisitService, VisitService>();
+
+builder.Services.AddOptions<AnalyticsOptions>()
+    .Bind(builder.Configuration.GetSection(AnalyticsOptions.SectionName))
+    .Validate(options =>
+    {
+        return Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out var uri)
+            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
+    }, "Analytics:BaseUrl must be an absolute HTTP or HTTPS URI.")
+    .Validate(options => options.TimeoutSeconds > 0, "Analytics:TimeoutSeconds must be greater than zero.")
+    .ValidateOnStart();
+
+builder.Services.AddOptions<OutboxProcessingOptions>()
+    .Bind(builder.Configuration.GetSection(OutboxProcessingOptions.SectionName))
+    .Validate(options => options.PollIntervalSeconds > 0, "OutboxProcessing:PollIntervalSeconds must be greater than zero.")
+    .Validate(options => options.BatchSize > 0, "OutboxProcessing:BatchSize must be greater than zero.")
+    .Validate(options => options.LeaseSeconds > 0, "OutboxProcessing:LeaseSeconds must be greater than zero.")
+    .Validate(options => options.BaseRetrySeconds > 0, "OutboxProcessing:BaseRetrySeconds must be greater than zero.")
+    .Validate(
+        options => options.MaxRetrySeconds >= options.BaseRetrySeconds,
+        "OutboxProcessing:MaxRetrySeconds must be greater than or equal to BaseRetrySeconds.")
+    .ValidateOnStart();
+
+builder.Services.AddHttpClient<IAnalyticsClient, AnalyticsClient>((serviceProvider, httpClient) =>
+{
+    var options = serviceProvider.GetRequiredService<IOptions<AnalyticsOptions>>().Value;
+    var baseUrl = options.BaseUrl.EndsWith("/", StringComparison.Ordinal)
+        ? options.BaseUrl
+        : $"{options.BaseUrl}/";
+    httpClient.BaseAddress = new Uri(baseUrl, UriKind.Absolute);
+    httpClient.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
+})
+    // Redirect otomatik izlenirse ilk 3xx görünmez; case politikası her non-2xx yanıtı retry olarak değerlendirmelidir.
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        AllowAutoRedirect = false
+    });
+
+if (builder.Configuration.GetValue<bool>($"{OutboxProcessingOptions.SectionName}:Enabled"))
+{
+    builder.Services.AddHostedService<OutboxBackgroundService>();
+}
 
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();

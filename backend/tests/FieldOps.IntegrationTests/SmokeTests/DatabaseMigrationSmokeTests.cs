@@ -17,6 +17,7 @@ public sealed class DatabaseMigrationSmokeTests : IntegrationTestBase
         var pendingMigrations = await ExecuteDbContextAsync(context => context.Database.GetPendingMigrationsAsync());
 
         Assert.Contains("20260813202257_InitialCreate", appliedMigrations);
+        Assert.Contains("20260814130126_AddOutboxMessages", appliedMigrations);
         Assert.Empty(pendingMigrations);
     }
 }

@@ -18,6 +18,7 @@ public sealed class FieldOpsWebApplicationFactory : WebApplicationFactory<Progra
         SetEnvironmentValue("ConnectionStrings__DefaultConnection", _connectionString);
         SetEnvironmentValue("Database__ApplyMigrations", "false");
         SetEnvironmentValue("DemoData__Enabled", "false");
+        SetEnvironmentValue("OutboxProcessing__Enabled", "false");
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -31,7 +32,9 @@ public sealed class FieldOpsWebApplicationFactory : WebApplicationFactory<Progra
                 ["ConnectionStrings:DefaultConnection"] = _connectionString,
                 // Development bootstrap verisi test senaryolarına gizli bağımlılık oluşturmamalıdır.
                 ["Database:ApplyMigrations"] = "false",
-                ["DemoData:Enabled"] = "false"
+                ["DemoData:Enabled"] = "false",
+                // Normal entegrasyon hostu pending Outbox satırlarıyla yarışmamalı veya gerçek Analytics ağına çıkmamalıdır.
+                ["OutboxProcessing:Enabled"] = "false"
             });
         });
     }

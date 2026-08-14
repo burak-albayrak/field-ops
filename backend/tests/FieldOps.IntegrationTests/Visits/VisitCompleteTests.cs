@@ -4,6 +4,7 @@ using System.Text.Json;
 using FieldOps.Domain.Entities;
 using FieldOps.Domain.Enums;
 using FieldOps.IntegrationTests.Infrastructure;
+using FieldOps.Infrastructure.Persistence.Outbox;
 using Microsoft.EntityFrameworkCore;
 
 namespace FieldOps.IntegrationTests.Visits;
@@ -53,6 +54,24 @@ public sealed class VisitCompleteTests : IntegrationTestBase
         Assert.Equal(VisitStatus.Completed, persisted.Status);
         Assert.Equal("Completed from integration test.", persisted.Notes);
         Assert.Equal(3, persisted.Version);
+
+        var outbox = Assert.Single(await LoadOutboxMessagesAsync());
+        Assert.Equal("VisitCompleted", outbox.Type);
+        Assert.Equal(persisted.CompletedAt, outbox.CreatedAt);
+        Assert.Equal(outbox.CreatedAt, outbox.NextAttemptAt);
+        Assert.Null(outbox.ProcessedAt);
+        Assert.Equal(0, outbox.AttemptCount);
+        Assert.Null(outbox.LockedUntil);
+        Assert.Null(outbox.LastError);
+
+        using var payload = JsonDocument.Parse(outbox.Payload);
+        var payloadRoot = payload.RootElement;
+        Assert.Equal(5, payloadRoot.EnumerateObject().Count());
+        Assert.Equal("VisitCompleted", payloadRoot.GetProperty("type").GetString());
+        Assert.Equal(persisted.Id, payloadRoot.GetProperty("visitId").GetInt64());
+        Assert.Equal(persisted.EmployeeId, payloadRoot.GetProperty("employeeId").GetInt64());
+        Assert.Equal(persisted.StoreId, payloadRoot.GetProperty("storeId").GetInt64());
+        Assert.Equal(persisted.CompletedAt, payloadRoot.GetProperty("completedAt").GetDateTime());
     }
 
     [Fact]
@@ -88,6 +107,10 @@ public sealed class VisitCompleteTests : IntegrationTestBase
         Assert.Equal(firstCompletedAt, persisted.CompletedAt);
         Assert.Equal("Original completion.", persisted.Notes);
         Assert.Equal(firstVersion, persisted.Version);
+
+        var outbox = Assert.Single(await LoadOutboxMessagesAsync());
+        using var payload = JsonDocument.Parse(outbox.Payload);
+        Assert.Equal(firstCompletedAt, payload.RootElement.GetProperty("completedAt").GetDateTime());
     }
 
     [Fact]
@@ -112,6 +135,7 @@ public sealed class VisitCompleteTests : IntegrationTestBase
         using var response = await PostCompleteAsync(999999, "Notes");
 
         await AssertProblemAsync(response, HttpStatusCode.NotFound, "visit_not_found");
+        Assert.Empty(await LoadOutboxMessagesAsync());
     }
 
     [Theory]
@@ -132,6 +156,7 @@ public sealed class VisitCompleteTests : IntegrationTestBase
         Assert.Null(persisted.CompletedAt);
         Assert.Null(persisted.Notes);
         Assert.Equal(expectedVersion, persisted.Version);
+        Assert.Empty(await LoadOutboxMessagesAsync());
     }
 
     private Task<long> ArrangeVisitAsync(VisitStatus status)
@@ -176,6 +201,14 @@ public sealed class VisitCompleteTests : IntegrationTestBase
         return ExecuteDbContextAsync(context => context.Visits
             .AsNoTracking()
             .SingleAsync(visit => visit.Id == visitId));
+    }
+
+    private Task<List<OutboxMessage>> LoadOutboxMessagesAsync()
+    {
+        return ExecuteDbContextAsync(context => context.OutboxMessages
+            .AsNoTracking()
+            .OrderBy(message => message.Id)
+            .ToListAsync());
     }
 
     private Task<HttpResponseMessage> PostCompleteAsync(long visitId, string? notes)
