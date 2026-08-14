@@ -30,6 +30,11 @@ public class AppDbContext : DbContext, IUnitOfWork
         {
             return await base.SaveChangesAsync(cancellationToken);
         }
+        catch (DbUpdateConcurrencyException exception)
+        {
+            // EF ayrıntısı Infrastructure sınırında kalır; üst katman yalnızca güvenli semantic conflict'i görür.
+            throw new ConcurrencyConflictException(exception);
+        }
         catch (DbUpdateException exception) when (IsActiveVisitUniqueViolation(exception))
         {
             // Yalnızca bu partial unique index'in 23505 hatası use-case anlamındaki duplicate Visit'tir;

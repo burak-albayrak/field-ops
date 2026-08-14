@@ -206,6 +206,314 @@ public class VisitServiceTests
     }
 
     [Fact]
+    public async Task CompleteAsync_throws_when_visit_is_missing_without_saving()
+    {
+        var unitOfWork = new UnitOfWorkFake();
+        var service = CreateService(new VisitRepositoryFake(), unitOfWork: unitOfWork);
+
+        var exception = await Assert.ThrowsAsync<VisitNotFoundException>(
+            () => service.CompleteAsync(42, new CompleteVisitInput("Notes")));
+
+        Assert.Equal(42, exception.VisitId);
+        Assert.Equal(0, unitOfWork.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task CompleteAsync_completes_an_in_progress_visit_saves_and_returns_detail()
+    {
+        var visit = CreateInProgressVisit();
+        var expected = CreateDetail(1, VisitStatus.Completed, 3, notes: "Completed notes");
+        var visitRepository = new VisitRepositoryFake { TrackedVisit = visit, Detail = expected };
+        var unitOfWork = new UnitOfWorkFake();
+        var service = CreateService(visitRepository, unitOfWork: unitOfWork);
+        var before = DateTime.UtcNow;
+
+        var result = await service.CompleteAsync(1, new CompleteVisitInput("Completed notes"));
+
+        var after = DateTime.UtcNow;
+        Assert.Same(expected, result);
+        Assert.Equal(VisitStatus.Completed, visit.Status);
+        Assert.NotNull(visit.CompletedAt);
+        Assert.InRange(visit.CompletedAt.GetValueOrDefault(), before, after);
+        Assert.Equal("Completed notes", visit.Notes);
+        Assert.Equal(3, visit.Version);
+        Assert.Equal(1, unitOfWork.SaveChangesCallCount);
+    }
+
+    [Theory]
+    [InlineData(VisitStatus.Planned)]
+    [InlineData(VisitStatus.Cancelled)]
+    public async Task CompleteAsync_propagates_invalid_state_without_saving(VisitStatus status)
+    {
+        var visit = CreatePlannedVisit();
+
+        if (status == VisitStatus.Cancelled)
+        {
+            visit.Cancel();
+        }
+
+        var unitOfWork = new UnitOfWorkFake();
+        var service = CreateService(
+            new VisitRepositoryFake { TrackedVisit = visit },
+            unitOfWork: unitOfWork);
+
+        var exception = await Assert.ThrowsAsync<InvalidVisitStateException>(
+            () => service.CompleteAsync(1, new CompleteVisitInput("Notes")));
+
+        Assert.Equal(status, exception.CurrentStatus);
+        Assert.Equal("Complete", exception.AttemptedOperation);
+        Assert.Equal(0, unitOfWork.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task CompleteAsync_returns_existing_completion_without_mutating_or_saving()
+    {
+        var visit = CreateInProgressVisit();
+        var originalCompletedAt = new DateTime(2026, 8, 14, 10, 0, 0, DateTimeKind.Utc);
+        visit.Complete(originalCompletedAt, "Original notes");
+        var expected = CreateDetail(
+            1,
+            VisitStatus.Completed,
+            3,
+            visit.StartedAt,
+            originalCompletedAt,
+            "Original notes");
+        var visitRepository = new VisitRepositoryFake { TrackedVisit = visit, Detail = expected };
+        var unitOfWork = new UnitOfWorkFake();
+        var service = CreateService(visitRepository, unitOfWork: unitOfWork);
+
+        var result = await service.CompleteAsync(1, new CompleteVisitInput("Different notes"));
+
+        Assert.Same(expected, result);
+        Assert.Equal(originalCompletedAt, visit.CompletedAt);
+        Assert.Equal("Original notes", visit.Notes);
+        Assert.Equal(3, visit.Version);
+        Assert.Equal(0, unitOfWork.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task CompleteAsync_returns_fresh_completed_detail_after_concurrency_conflict()
+    {
+        var visit = CreateInProgressVisit();
+        var winningCompletedAt = new DateTime(2026, 8, 14, 10, 0, 0, DateTimeKind.Utc);
+        var winningDetail = CreateDetail(
+            1,
+            VisitStatus.Completed,
+            3,
+            visit.StartedAt,
+            winningCompletedAt,
+            "Winning notes");
+        var conflict = new ConcurrencyConflictException();
+        var visitRepository = new VisitRepositoryFake { TrackedVisit = visit, Detail = winningDetail };
+        var unitOfWork = new UnitOfWorkFake { ExceptionToThrow = conflict };
+        var service = CreateService(visitRepository, unitOfWork: unitOfWork);
+
+        var result = await service.CompleteAsync(1, new CompleteVisitInput("Losing notes"));
+
+        Assert.Same(winningDetail, result);
+        Assert.Equal(winningCompletedAt, result.CompletedAt);
+        Assert.Equal("Winning notes", result.Notes);
+        Assert.Equal(3, result.Version);
+        Assert.Equal(1, unitOfWork.SaveChangesCallCount);
+        Assert.Equal(1, visitRepository.GetDetailCallCount);
+    }
+
+    [Fact]
+    public async Task CompleteAsync_rethrows_concurrency_conflict_when_fresh_detail_is_not_completed()
+    {
+        var conflict = new ConcurrencyConflictException();
+        var visitRepository = new VisitRepositoryFake
+        {
+            TrackedVisit = CreateInProgressVisit(),
+            Detail = CreateDetail(1, VisitStatus.InProgress, 2)
+        };
+        var unitOfWork = new UnitOfWorkFake { ExceptionToThrow = conflict };
+        var service = CreateService(visitRepository, unitOfWork: unitOfWork);
+
+        var exception = await Assert.ThrowsAsync<ConcurrencyConflictException>(
+            () => service.CompleteAsync(1, new CompleteVisitInput("Notes")));
+
+        Assert.Same(conflict, exception);
+        Assert.Equal(1, unitOfWork.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task CompleteAsync_rethrows_concurrency_conflict_when_fresh_detail_is_missing()
+    {
+        var conflict = new ConcurrencyConflictException();
+        var visitRepository = new VisitRepositoryFake { TrackedVisit = CreateInProgressVisit() };
+        var unitOfWork = new UnitOfWorkFake { ExceptionToThrow = conflict };
+        var service = CreateService(visitRepository, unitOfWork: unitOfWork);
+
+        var exception = await Assert.ThrowsAsync<ConcurrencyConflictException>(
+            () => service.CompleteAsync(1, new CompleteVisitInput("Notes")));
+
+        Assert.Same(conflict, exception);
+        Assert.Equal(1, unitOfWork.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task CancelAsync_rejects_invalid_version_without_persistence_work()
+    {
+        var visitRepository = new VisitRepositoryFake();
+        var unitOfWork = new UnitOfWorkFake();
+        var service = CreateService(visitRepository, unitOfWork: unitOfWork);
+
+        await Assert.ThrowsAsync<ApplicationValidationException>(
+            () => service.CancelAsync(1, new CancelVisitInput(0)));
+
+        Assert.Equal(0, visitRepository.GetByIdCallCount);
+        Assert.Equal(0, unitOfWork.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task CancelAsync_throws_when_visit_is_missing_without_saving()
+    {
+        var unitOfWork = new UnitOfWorkFake();
+        var service = CreateService(new VisitRepositoryFake(), unitOfWork: unitOfWork);
+
+        var exception = await Assert.ThrowsAsync<VisitNotFoundException>(
+            () => service.CancelAsync(42, new CancelVisitInput(1)));
+
+        Assert.Equal(42, exception.VisitId);
+        Assert.Equal(0, unitOfWork.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task CancelAsync_cancels_a_planned_visit_saves_and_returns_detail()
+    {
+        var visit = CreatePlannedVisit();
+        var expected = CreateDetail(1, VisitStatus.Cancelled, 2);
+        var visitRepository = new VisitRepositoryFake { TrackedVisit = visit, Detail = expected };
+        var unitOfWork = new UnitOfWorkFake();
+        var service = CreateService(visitRepository, unitOfWork: unitOfWork);
+
+        var result = await service.CancelAsync(1, new CancelVisitInput(1));
+
+        Assert.Same(expected, result);
+        Assert.Equal(VisitStatus.Cancelled, visit.Status);
+        Assert.Equal(2, visit.Version);
+        Assert.Equal(1, unitOfWork.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task CancelAsync_cancels_an_in_progress_visit_and_preserves_start_details()
+    {
+        var visit = CreateInProgressVisit();
+        var originalStartedAt = visit.StartedAt;
+        var originalLatitude = visit.StartLatitude;
+        var originalLongitude = visit.StartLongitude;
+        var expected = CreateDetail(1, VisitStatus.Cancelled, 3, startedAt: originalStartedAt);
+        var visitRepository = new VisitRepositoryFake { TrackedVisit = visit, Detail = expected };
+        var unitOfWork = new UnitOfWorkFake();
+        var service = CreateService(visitRepository, unitOfWork: unitOfWork);
+
+        var result = await service.CancelAsync(1, new CancelVisitInput(2));
+
+        Assert.Same(expected, result);
+        Assert.Equal(VisitStatus.Cancelled, visit.Status);
+        Assert.Equal(originalStartedAt, visit.StartedAt);
+        Assert.Equal(originalLatitude, visit.StartLatitude);
+        Assert.Equal(originalLongitude, visit.StartLongitude);
+        Assert.Equal(3, visit.Version);
+        Assert.Equal(1, unitOfWork.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task CancelAsync_rejects_stale_version_before_domain_mutation()
+    {
+        var visit = CreateInProgressVisit();
+        var originalStartedAt = visit.StartedAt;
+        var unitOfWork = new UnitOfWorkFake();
+        var service = CreateService(
+            new VisitRepositoryFake { TrackedVisit = visit },
+            unitOfWork: unitOfWork);
+
+        await Assert.ThrowsAsync<ConcurrencyConflictException>(
+            () => service.CancelAsync(1, new CancelVisitInput(1)));
+
+        Assert.Equal(VisitStatus.InProgress, visit.Status);
+        Assert.Equal(originalStartedAt, visit.StartedAt);
+        Assert.Equal(2, visit.Version);
+        Assert.Equal(0, unitOfWork.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task CancelAsync_with_matching_version_propagates_completed_state_conflict()
+    {
+        var visit = CreateCompletedVisit();
+        var unitOfWork = new UnitOfWorkFake();
+        var service = CreateService(
+            new VisitRepositoryFake { TrackedVisit = visit },
+            unitOfWork: unitOfWork);
+
+        var exception = await Assert.ThrowsAsync<InvalidVisitStateException>(
+            () => service.CancelAsync(1, new CancelVisitInput(3)));
+
+        Assert.Equal(VisitStatus.Completed, exception.CurrentStatus);
+        Assert.Equal("Cancel", exception.AttemptedOperation);
+        Assert.Equal(3, visit.Version);
+        Assert.Equal(0, unitOfWork.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task CancelAsync_with_stale_version_prioritizes_concurrency_over_completed_state()
+    {
+        var visit = CreateCompletedVisit();
+        var originalCompletedAt = visit.CompletedAt;
+        var originalNotes = visit.Notes;
+        var unitOfWork = new UnitOfWorkFake();
+        var service = CreateService(
+            new VisitRepositoryFake { TrackedVisit = visit },
+            unitOfWork: unitOfWork);
+
+        await Assert.ThrowsAsync<ConcurrencyConflictException>(
+            () => service.CancelAsync(1, new CancelVisitInput(2)));
+
+        Assert.Equal(VisitStatus.Completed, visit.Status);
+        Assert.Equal(originalCompletedAt, visit.CompletedAt);
+        Assert.Equal(originalNotes, visit.Notes);
+        Assert.Equal(3, visit.Version);
+        Assert.Equal(0, unitOfWork.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task CancelAsync_rejects_an_already_cancelled_visit_with_matching_version()
+    {
+        var visit = CreatePlannedVisit();
+        visit.Cancel();
+        var unitOfWork = new UnitOfWorkFake();
+        var service = CreateService(
+            new VisitRepositoryFake { TrackedVisit = visit },
+            unitOfWork: unitOfWork);
+
+        var exception = await Assert.ThrowsAsync<InvalidVisitStateException>(
+            () => service.CancelAsync(1, new CancelVisitInput(2)));
+
+        Assert.Equal(VisitStatus.Cancelled, exception.CurrentStatus);
+        Assert.Equal("Cancel", exception.AttemptedOperation);
+        Assert.Equal(2, visit.Version);
+        Assert.Equal(0, unitOfWork.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task CancelAsync_propagates_save_concurrency_conflict_without_retry()
+    {
+        var visit = CreatePlannedVisit();
+        var conflict = new ConcurrencyConflictException();
+        var visitRepository = new VisitRepositoryFake { TrackedVisit = visit };
+        var unitOfWork = new UnitOfWorkFake { ExceptionToThrow = conflict };
+        var service = CreateService(visitRepository, unitOfWork: unitOfWork);
+
+        var exception = await Assert.ThrowsAsync<ConcurrencyConflictException>(
+            () => service.CancelAsync(1, new CancelVisitInput(1)));
+
+        Assert.Same(conflict, exception);
+        Assert.Equal(1, unitOfWork.SaveChangesCallCount);
+        Assert.Equal(0, visitRepository.GetDetailCallCount);
+    }
+
+    [Fact]
     public async Task ListAsync_rejects_an_invalid_page()
     {
         var service = CreateService(new VisitRepositoryFake());
@@ -258,7 +566,13 @@ public class VisitServiceTests
             unitOfWork ?? new UnitOfWorkFake());
     }
 
-    private static VisitDetailDto CreateDetail(long id, VisitStatus status = VisitStatus.Planned, long version = 1)
+    private static VisitDetailDto CreateDetail(
+        long id,
+        VisitStatus status = VisitStatus.Planned,
+        long version = 1,
+        DateTime? startedAt = null,
+        DateTime? completedAt = null,
+        string? notes = null)
     {
         return new VisitDetailDto(
             id,
@@ -266,11 +580,11 @@ public class VisitServiceTests
             new StoreSummaryDto(20, "Ankara", "TR", 39.9334, 32.8597),
             new DateOnly(2026, 8, 14),
             status,
+            startedAt,
+            completedAt,
             null,
             null,
-            null,
-            null,
-            null,
+            notes,
             new DateTime(2026, 8, 1, 8, 0, 0, DateTimeKind.Utc),
             version);
     }
@@ -278,6 +592,22 @@ public class VisitServiceTests
     private static Visit CreatePlannedVisit()
     {
         return new Visit(10, 20, new DateOnly(2026, 8, 14), DateTime.UtcNow);
+    }
+
+    private static Visit CreateInProgressVisit()
+    {
+        var visit = CreatePlannedVisit();
+        visit.Start(new DateTime(2026, 8, 14, 9, 0, 0, DateTimeKind.Utc), 39.9335, 32.8598);
+        return visit;
+    }
+
+    private static Visit CreateCompletedVisit()
+    {
+        var visit = CreateInProgressVisit();
+        visit.Complete(
+            new DateTime(2026, 8, 14, 10, 0, 0, DateTimeKind.Utc),
+            "Completed notes");
+        return visit;
     }
 
     private static VisitListItemDto CreateListItem(long id)
@@ -312,6 +642,8 @@ public class VisitServiceTests
 
         public int GetByIdCallCount { get; private set; }
 
+        public int GetDetailCallCount { get; private set; }
+
         public void Add(Visit visit)
         {
             AddedVisit = visit;
@@ -319,6 +651,7 @@ public class VisitServiceTests
 
         public Task<VisitDetailDto?> GetDetailAsync(long id, CancellationToken cancellationToken = default)
         {
+            GetDetailCallCount++;
             return Task.FromResult(Detail);
         }
 
@@ -369,11 +702,19 @@ public class VisitServiceTests
 
     private sealed class UnitOfWorkFake : IUnitOfWork
     {
+        public Exception? ExceptionToThrow { get; init; }
+
         public int SaveChangesCallCount { get; private set; }
 
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
             SaveChangesCallCount++;
+
+            if (ExceptionToThrow is not null)
+            {
+                return Task.FromException<int>(ExceptionToThrow);
+            }
+
             return Task.FromResult(1);
         }
     }

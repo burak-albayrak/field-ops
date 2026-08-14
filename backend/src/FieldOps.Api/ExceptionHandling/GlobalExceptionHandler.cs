@@ -45,6 +45,12 @@ public sealed class GlobalExceptionHandler : IExceptionHandler
                     "Invalid visit status",
                     "The requested visit operation is not allowed in its current status."),
                     "invalid_visit_status"),
+            ConcurrencyConflictException =>
+                (CreateProblemDetails(
+                    StatusCodes.Status409Conflict,
+                    "Concurrency conflict",
+                    "The visit was modified by another operation. Refresh the current state and retry if appropriate."),
+                    "concurrency_conflict"),
             ApplicationValidationException validation =>
                 (CreateValidationProblemDetails(validation), "validation_error"),
             _ => HandleUnexpectedException(exception)

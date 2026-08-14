@@ -3,6 +3,7 @@ using FieldOps.Application.Common.Exceptions;
 using FieldOps.Application.Common.Geography;
 using FieldOps.Application.Visits.Models;
 using FieldOps.Domain.Entities;
+using FieldOps.Domain.Enums;
 
 namespace FieldOps.Application.Visits;
 
@@ -101,6 +102,74 @@ public class VisitService : IVisitService
         var detail = await _visitRepository.GetDetailAsync(visit.Id, cancellationToken);
 
         return detail ?? throw new InvalidOperationException("The newly started visit could not be retrieved.");
+    }
+
+    public async Task<VisitDetailDto> CompleteAsync(
+        long id,
+        CompleteVisitInput input,
+        CancellationToken cancellationToken = default)
+    {
+        var visit = await _visitRepository.GetByIdAsync(id, cancellationToken)
+            ?? throw new VisitNotFoundException(id);
+
+        if (visit.Status == VisitStatus.Completed)
+        {
+            // Retry, gerçek bir durum geçişi değildir; ilk tamamlamanın zamanı, notu ve Version'ı korunur.
+            var existingDetail = await _visitRepository.GetDetailAsync(visit.Id, cancellationToken);
+
+            return existingDetail
+                ?? throw new InvalidOperationException("The completed visit could not be retrieved.");
+        }
+
+        visit.Complete(DateTime.UtcNow, input.Notes);
+
+        try
+        {
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (ConcurrencyConflictException)
+        {
+            // Tracked entity başarısız denemenin değerlerini hâlâ taşıyabilir; karar yalnızca taze DB projeksiyonuyla verilir.
+            var currentDetail = await _visitRepository.GetDetailAsync(visit.Id, cancellationToken);
+
+            if (currentDetail?.Status == VisitStatus.Completed)
+            {
+                return currentDetail;
+            }
+
+            throw;
+        }
+
+        var detail = await _visitRepository.GetDetailAsync(visit.Id, cancellationToken);
+
+        return detail ?? throw new InvalidOperationException("The newly completed visit could not be retrieved.");
+    }
+
+    public async Task<VisitDetailDto> CancelAsync(
+        long id,
+        CancelVisitInput input,
+        CancellationToken cancellationToken = default)
+    {
+        if (input.Version <= 0)
+        {
+            throw new ApplicationValidationException(nameof(input.Version), "Version must be greater than zero.");
+        }
+
+        var visit = await _visitRepository.GetByIdAsync(id, cancellationToken)
+            ?? throw new VisitNotFoundException(id);
+
+        if (input.Version != visit.Version)
+        {
+            // Eski istemci görünümü, daha yeni lifecycle kararını state kontrolüne ulaşmadan conflict olarak korur.
+            throw new ConcurrencyConflictException();
+        }
+
+        visit.Cancel();
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        var detail = await _visitRepository.GetDetailAsync(visit.Id, cancellationToken);
+
+        return detail ?? throw new InvalidOperationException("The newly cancelled visit could not be retrieved.");
     }
 
     public async Task<VisitListResult> ListAsync(

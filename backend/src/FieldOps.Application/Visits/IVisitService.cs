@@ -17,6 +17,16 @@ public interface IVisitService
         StartVisitInput input,
         CancellationToken cancellationToken = default);
 
+    Task<VisitDetailDto> CompleteAsync(
+        long id,
+        CompleteVisitInput input,
+        CancellationToken cancellationToken = default);
+
+    Task<VisitDetailDto> CancelAsync(
+        long id,
+        CancelVisitInput input,
+        CancellationToken cancellationToken = default);
+
     Task<VisitListResult> ListAsync(
         VisitListFilter filter,
         int page,

@@ -72,4 +72,28 @@ public class VisitsController : ControllerBase
 
         return Ok(started);
     }
+
+    [HttpPost("{id:long}/complete")]
+    public async Task<ActionResult<VisitDetailDto>> Complete(
+        long id,
+        CompleteVisitRequest request,
+        CancellationToken cancellationToken)
+    {
+        var input = new CompleteVisitInput(request.Notes);
+        var completed = await _visitService.CompleteAsync(id, input, cancellationToken);
+
+        return Ok(completed);
+    }
+
+    [HttpPost("{id:long}/cancel")]
+    public async Task<ActionResult<VisitDetailDto>> Cancel(
+        long id,
+        CancelVisitRequest request,
+        CancellationToken cancellationToken)
+    {
+        var input = new CancelVisitInput(request.Version!.Value);
+        var cancelled = await _visitService.CancelAsync(id, input, cancellationToken);
+
+        return Ok(cancelled);
+    }
 }
