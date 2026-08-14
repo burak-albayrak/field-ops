@@ -2,13 +2,16 @@ using FieldOps.Application.Abstractions.Persistence;
 using FieldOps.Application.Abstractions.Outbox;
 using FieldOps.Application.Visits;
 using FieldOps.Api.ExceptionHandling;
+using FieldOps.Api.HealthChecks;
 using FieldOps.Api.HostedServices;
 using FieldOps.Infrastructure.Analytics;
 using FieldOps.Infrastructure.Persistence;
 using FieldOps.Infrastructure.Persistence.Repositories;
 using FieldOps.Infrastructure.Persistence.Outbox;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Options;
 
@@ -77,6 +80,8 @@ if (builder.Configuration.GetValue<bool>($"{OutboxProcessingOptions.SectionName}
 
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+builder.Services.AddHealthChecks()
+    .AddCheck<PostgreSqlHealthCheck>("postgresql");
 builder.Services.AddControllers()
     .AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.Configure<ApiBehaviorOptions>(options =>
@@ -129,6 +134,25 @@ if (!app.Environment.IsDevelopment())
 {
     app.UseHttpsRedirection();
 }
+
+app.MapHealthChecks("/health", new HealthCheckOptions
+{
+    ResultStatusCodes =
+    {
+        [HealthStatus.Healthy] = StatusCodes.Status200OK,
+        [HealthStatus.Degraded] = StatusCodes.Status503ServiceUnavailable,
+        [HealthStatus.Unhealthy] = StatusCodes.Status503ServiceUnavailable
+    },
+    ResponseWriter = static async (httpContext, healthReport) =>
+    {
+        // Dış yanıt yalnızca readiness sonucunu açıklar; altyapı exception ve bağlantı ayrıntıları sızdırılmaz.
+        var publicStatus = healthReport.Status == HealthStatus.Healthy
+            ? "Healthy"
+            : "Unhealthy";
+
+        await httpContext.Response.WriteAsJsonAsync(new { status = publicStatus });
+    }
+});
 
 app.MapControllers();
 
