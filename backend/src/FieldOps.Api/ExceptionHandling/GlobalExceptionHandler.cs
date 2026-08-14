@@ -1,4 +1,5 @@
 using FieldOps.Application.Common.Exceptions;
+using FieldOps.Domain.Exceptions;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 
@@ -32,6 +33,18 @@ public sealed class GlobalExceptionHandler : IExceptionHandler
                 (CreateProblemDetails(StatusCodes.Status404NotFound, "Store not found", storeNotFound.Message), "store_not_found"),
             DuplicateVisitException duplicateVisit =>
                 (CreateProblemDetails(StatusCodes.Status409Conflict, "Duplicate visit", duplicateVisit.Message), "duplicate_visit"),
+            VisitTooFarFromStoreException =>
+                (CreateProblemDetails(
+                    StatusCodes.Status422UnprocessableEntity,
+                    "Visit is too far from store",
+                    "The visit cannot be started because the employee is too far from the store."),
+                    "visit_too_far_from_store"),
+            InvalidVisitStateException =>
+                (CreateProblemDetails(
+                    StatusCodes.Status409Conflict,
+                    "Invalid visit status",
+                    "The requested visit operation is not allowed in its current status."),
+                    "invalid_visit_status"),
             ApplicationValidationException validation =>
                 (CreateValidationProblemDetails(validation), "validation_error"),
             _ => HandleUnexpectedException(exception)

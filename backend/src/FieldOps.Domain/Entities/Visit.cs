@@ -54,11 +54,7 @@ public class Visit
     public void Start(DateTime startedAt, double latitude, double longitude)
     {
         EnsureUtc(startedAt, nameof(startedAt));
-
-        if (Status != VisitStatus.Planned)
-        {
-            throw new InvalidVisitStateException(Status, "Start");
-        }
+        EnsureCanStart();
 
         // 200 metre yakınlık kuralı mağaza koordinatına ihtiyaç duyar. Visit yalnızca
         // StoreId taşıdığı için bu kontrol, Store verisini yükleyen Application katmanında yapılacaktır.
@@ -67,6 +63,16 @@ public class Visit
         StartLatitude = latitude;
         StartLongitude = longitude;
         Version++;
+    }
+
+    // Saf guard, Application'ın imkansız bir işlem için Store/mesafe sorgusu yapmadan
+    // Domain kuralını kontrol etmesini sağlar; gerçek geçiş ve Version değişimi yalnızca Start'ta kalır.
+    public void EnsureCanStart()
+    {
+        if (Status != VisitStatus.Planned)
+        {
+            throw new InvalidVisitStateException(Status, "Start");
+        }
     }
 
     // Complete tekrarını burada başarılı saymıyoruz: entity yalnızca gerçek durum

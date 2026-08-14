@@ -21,6 +21,12 @@ public class VisitRepository : IVisitRepository
         _context.Visits.Add(visit);
     }
 
+    // Mutasyondan sonra SaveChanges'in değişiklikleri görmesi için entity aynı scoped DbContext tarafından izlenir.
+    public Task<Visit?> GetByIdAsync(long id, CancellationToken cancellationToken = default)
+    {
+        return _context.Visits.SingleOrDefaultAsync(visit => visit.Id == id, cancellationToken);
+    }
+
     public Task<VisitDetailDto?> GetDetailAsync(long id, CancellationToken cancellationToken = default)
     {
         // AsNoTracking ve doğrudan projection, salt-okunur detay isteğinde EF entity yükleme/izleme maliyetini önler.

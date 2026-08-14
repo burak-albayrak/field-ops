@@ -17,4 +17,13 @@ public class StoreRepository : IStoreRepository
     {
         return _context.Stores.AnyAsync(store => store.Id == id, cancellationToken);
     }
+
+    public Task<StoreCoordinates?> GetCoordinatesAsync(long id, CancellationToken cancellationToken = default)
+    {
+        return _context.Stores
+            .AsNoTracking()
+            .Where(store => store.Id == id)
+            .Select(store => new StoreCoordinates(store.Latitude, store.Longitude))
+            .SingleOrDefaultAsync(cancellationToken);
+    }
 }

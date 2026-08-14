@@ -60,4 +60,16 @@ public class VisitsController : ControllerBase
 
         return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
     }
+
+    [HttpPost("{id:long}/start")]
+    public async Task<ActionResult<VisitDetailDto>> Start(
+        long id,
+        StartVisitRequest request,
+        CancellationToken cancellationToken)
+    {
+        var input = new StartVisitInput(request.Latitude!.Value, request.Longitude!.Value);
+        var started = await _visitService.StartAsync(id, input, cancellationToken);
+
+        return Ok(started);
+    }
 }

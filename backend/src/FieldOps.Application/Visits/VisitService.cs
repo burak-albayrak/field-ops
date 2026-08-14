@@ -1,5 +1,6 @@
 using FieldOps.Application.Abstractions.Persistence;
 using FieldOps.Application.Common.Exceptions;
+using FieldOps.Application.Common.Geography;
 using FieldOps.Application.Visits.Models;
 using FieldOps.Domain.Entities;
 
@@ -7,6 +8,8 @@ namespace FieldOps.Application.Visits;
 
 public class VisitService : IVisitService
 {
+    private const double MaximumStartDistanceMeters = 200d;
+
     private readonly IVisitRepository _visitRepository;
     private readonly IEmployeeRepository _employeeRepository;
     private readonly IStoreRepository _storeRepository;
@@ -65,6 +68,41 @@ public class VisitService : IVisitService
         return detail ?? throw new VisitNotFoundException(id);
     }
 
+    public async Task<VisitDetailDto> StartAsync(
+        long id,
+        StartVisitInput input,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateStartCoordinates(input);
+
+        var visit = await _visitRepository.GetByIdAsync(id, cancellationToken)
+            ?? throw new VisitNotFoundException(id);
+
+        // Saf Domain guard'ı, durum çatışmasını mesafe kontrolünden önce ve mutasyon yapmadan önceliklendirir.
+        visit.EnsureCanStart();
+
+        var storeCoordinates = await _storeRepository.GetCoordinatesAsync(visit.StoreId, cancellationToken)
+            ?? throw new StoreNotFoundException(visit.StoreId);
+
+        var distanceMeters = HaversineDistanceCalculator.CalculateMeters(
+            storeCoordinates.Latitude,
+            storeCoordinates.Longitude,
+            input.Latitude,
+            input.Longitude);
+
+        if (distanceMeters > MaximumStartDistanceMeters)
+        {
+            throw new VisitTooFarFromStoreException(id, distanceMeters, MaximumStartDistanceMeters);
+        }
+
+        visit.Start(DateTime.UtcNow, input.Latitude, input.Longitude);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        var detail = await _visitRepository.GetDetailAsync(visit.Id, cancellationToken);
+
+        return detail ?? throw new InvalidOperationException("The newly started visit could not be retrieved.");
+    }
+
     public async Task<VisitListResult> ListAsync(
         VisitListFilter filter,
         int page,
@@ -104,5 +142,20 @@ public class VisitService : IVisitService
         var items = visits.Take(pageSize).ToList();
 
         return new VisitListResult(items, page, pageSize, hasNextPage);
+    }
+
+    private static void ValidateStartCoordinates(StartVisitInput input)
+    {
+        if (double.IsNaN(input.Latitude) || double.IsInfinity(input.Latitude)
+            || input.Latitude is < -90d or > 90d)
+        {
+            throw new ApplicationValidationException(nameof(input.Latitude), "Latitude must be between -90 and 90.");
+        }
+
+        if (double.IsNaN(input.Longitude) || double.IsInfinity(input.Longitude)
+            || input.Longitude is < -180d or > 180d)
+        {
+            throw new ApplicationValidationException(nameof(input.Longitude), "Longitude must be between -180 and 180.");
+        }
     }
 }

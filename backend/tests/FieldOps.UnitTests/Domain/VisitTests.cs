@@ -71,6 +71,49 @@ public class VisitTests
     }
 
     [Fact]
+    public void EnsureCanStart_OnPlanned_DoesNotChangeVisit()
+    {
+        var visit = CreatePlannedVisit();
+
+        visit.EnsureCanStart();
+
+        Assert.Equal(VisitStatus.Planned, visit.Status);
+        Assert.Null(visit.StartedAt);
+        Assert.Null(visit.CompletedAt);
+        Assert.Null(visit.StartLatitude);
+        Assert.Null(visit.StartLongitude);
+        Assert.Null(visit.Notes);
+        Assert.Equal(1, visit.Version);
+    }
+
+    [Theory]
+    [InlineData(VisitStatus.InProgress)]
+    [InlineData(VisitStatus.Completed)]
+    [InlineData(VisitStatus.Cancelled)]
+    public void EnsureCanStart_OnInvalidState_ThrowsWithoutChangingVisit(VisitStatus status)
+    {
+        var visit = CreateVisitInStatus(status);
+        var originalStartedAt = visit.StartedAt;
+        var originalCompletedAt = visit.CompletedAt;
+        var originalStartLatitude = visit.StartLatitude;
+        var originalStartLongitude = visit.StartLongitude;
+        var originalNotes = visit.Notes;
+        var originalVersion = visit.Version;
+
+        var exception = Assert.Throws<InvalidVisitStateException>(() => visit.EnsureCanStart());
+
+        Assert.Equal(status, exception.CurrentStatus);
+        Assert.Equal("Start", exception.AttemptedOperation);
+        Assert.Equal(status, visit.Status);
+        Assert.Equal(originalStartedAt, visit.StartedAt);
+        Assert.Equal(originalCompletedAt, visit.CompletedAt);
+        Assert.Equal(originalStartLatitude, visit.StartLatitude);
+        Assert.Equal(originalStartLongitude, visit.StartLongitude);
+        Assert.Equal(originalNotes, visit.Notes);
+        Assert.Equal(originalVersion, visit.Version);
+    }
+
+    [Fact]
     public void Complete_FromInProgress_SetsCompletionDetailsAndIncrementsVersion()
     {
         // Arrange
@@ -239,6 +282,29 @@ public class VisitTests
         var visit = CreatePlannedVisit();
         visit.Start(Utc(2026, 8, 20, 8, 15), 41.0082, 28.9784);
         visit.Complete(Utc(2026, 8, 20, 9, 0), "Not");
+        return visit;
+    }
+
+    private static Visit CreateVisitInStatus(VisitStatus status)
+    {
+        var visit = CreatePlannedVisit();
+
+        switch (status)
+        {
+            case VisitStatus.InProgress:
+                visit.Start(Utc(2026, 8, 20, 8, 15), 41.0082, 28.9784);
+                break;
+            case VisitStatus.Completed:
+                visit.Start(Utc(2026, 8, 20, 8, 15), 41.0082, 28.9784);
+                visit.Complete(Utc(2026, 8, 20, 9, 0), "Not");
+                break;
+            case VisitStatus.Cancelled:
+                visit.Cancel();
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(status), status, null);
+        }
+
         return visit;
     }
 

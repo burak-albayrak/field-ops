@@ -7,6 +7,8 @@ public interface IVisitRepository
 {
     void Add(Visit visit);
 
+    Task<Visit?> GetByIdAsync(long id, CancellationToken cancellationToken = default);
+
     Task<VisitDetailDto?> GetDetailAsync(long id, CancellationToken cancellationToken = default);
 
     // IQueryable dışarı verilmez; filtreleme ve projeksiyon persistence sınırında tutulur.
