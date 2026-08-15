@@ -40,6 +40,7 @@ public sealed class OutboxRepositoryTests : IntegrationTestBase
         var persisted = await LoadMessageAsync(messageId);
         Assert.Equal(message.LockedUntil, persisted.LockedUntil);
         Assert.Null(persisted.ProcessedAt);
+        Assert.Null(persisted.FailedAt);
         Assert.Equal(0, persisted.AttemptCount);
         Assert.Equal(beforeClaim.Type, persisted.Type);
         Assert.Equal(beforeClaim.Payload, persisted.Payload);
@@ -151,6 +152,7 @@ public sealed class OutboxRepositoryTests : IntegrationTestBase
         Assert.True(marked);
         var persisted = await LoadMessageAsync(messageId);
         Assert.Equal(processedAt, persisted.ProcessedAt);
+        Assert.Null(persisted.FailedAt);
         Assert.Null(persisted.LockedUntil);
         Assert.Null(persisted.LastError);
         Assert.Equal(1, persisted.AttemptCount);
@@ -176,6 +178,7 @@ public sealed class OutboxRepositoryTests : IntegrationTestBase
         Assert.True(marked);
         var persisted = await LoadMessageAsync(messageId);
         Assert.Null(persisted.ProcessedAt);
+        Assert.Null(persisted.FailedAt);
         Assert.Equal(1, persisted.AttemptCount);
         Assert.Equal(retryAt, persisted.NextAttemptAt);
         Assert.Equal("analytics unavailable", persisted.LastError);
@@ -186,6 +189,33 @@ public sealed class OutboxRepositoryTests : IntegrationTestBase
         var retryClaim = Assert.Single(await ExecuteRepositoryAsync(repository =>
             repository.ClaimPendingAsync(retryAt, TimeSpan.FromMinutes(5), 1)));
         Assert.Equal(1, retryClaim.AttemptCount);
+    }
+
+    [Fact]
+    public async Task MarkPermanentlyFailed_records_terminal_failure_and_removes_message_from_pending_work()
+    {
+        var messageId = await SeedMessageAsync(NowUtc.AddMinutes(-1));
+        var beforeFailure = await LoadMessageAsync(messageId);
+        var claim = Assert.Single(await ExecuteRepositoryAsync(repository =>
+            repository.ClaimPendingAsync(NowUtc, TimeSpan.FromMinutes(5), 1)));
+        var failedAt = NowUtc.AddMinutes(1);
+
+        var marked = await ExecuteRepositoryAsync(repository => repository.MarkPermanentlyFailedAsync(
+            messageId,
+            claim.LockedUntil,
+            failedAt,
+            "Analytics returned HTTP 400."));
+
+        Assert.True(marked);
+        var persisted = await LoadMessageAsync(messageId);
+        Assert.Null(persisted.ProcessedAt);
+        Assert.Equal(failedAt, persisted.FailedAt);
+        Assert.Equal(1, persisted.AttemptCount);
+        Assert.Equal(beforeFailure.NextAttemptAt, persisted.NextAttemptAt);
+        Assert.Equal("Analytics returned HTTP 400.", persisted.LastError);
+        Assert.Null(persisted.LockedUntil);
+        Assert.Empty(await ExecuteRepositoryAsync(repository =>
+            repository.ClaimPendingAsync(failedAt.AddYears(1), TimeSpan.FromMinutes(5), 1)));
     }
 
     [Fact]
@@ -204,12 +234,19 @@ public sealed class OutboxRepositoryTests : IntegrationTestBase
             firstClaim.LockedUntil,
             NowUtc.AddHours(1),
             "stale worker error"));
+        var stalePermanentFailure = await ExecuteRepositoryAsync(repository =>
+            repository.MarkPermanentlyFailedAsync(
+                messageId,
+                firstClaim.LockedUntil,
+                NowUtc.AddMinutes(7),
+                "stale permanent error"));
         var staleSuccess = await ExecuteRepositoryAsync(repository => repository.MarkProcessedAsync(
             messageId,
             firstClaim.LockedUntil,
             NowUtc.AddMinutes(7)));
 
         Assert.False(staleFailure);
+        Assert.False(stalePermanentFailure);
         Assert.False(staleSuccess);
         var afterStaleWrites = await LoadMessageAsync(messageId);
         Assert.Equal(secondClaim.LockedUntil, afterStaleWrites.LockedUntil);
@@ -217,6 +254,7 @@ public sealed class OutboxRepositoryTests : IntegrationTestBase
         Assert.Equal(beforeStaleWrites.NextAttemptAt, afterStaleWrites.NextAttemptAt);
         Assert.Equal(beforeStaleWrites.LastError, afterStaleWrites.LastError);
         Assert.Null(afterStaleWrites.ProcessedAt);
+        Assert.Null(afterStaleWrites.FailedAt);
 
         Assert.True(await ExecuteRepositoryAsync(repository => repository.MarkProcessedAsync(
             messageId,

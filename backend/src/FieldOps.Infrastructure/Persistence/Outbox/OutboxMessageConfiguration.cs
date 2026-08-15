@@ -34,6 +34,10 @@ public class OutboxMessageConfiguration : IEntityTypeConfiguration<OutboxMessage
             .HasColumnName("processed_at")
             .HasColumnType("timestamp with time zone");
 
+        builder.Property(message => message.FailedAt)
+            .HasColumnName("failed_at")
+            .HasColumnType("timestamp with time zone");
+
         builder.Property(message => message.AttemptCount)
             .HasColumnName("attempt_count")
             .HasColumnType("integer")
@@ -53,9 +57,9 @@ public class OutboxMessageConfiguration : IEntityTypeConfiguration<OutboxMessage
             .HasColumnName("last_error")
             .HasColumnType("text");
 
-        // Worker yalnızca işlenmemiş mesajları zaman ve Id sırasıyla okuyacağı için tek, sorgu odaklı partial index yeterlidir.
+        // Worker yalnızca işlenmemiş ve permanent başarısız olmayan mesajları zaman ve Id sırasıyla okur.
         builder.HasIndex(message => new { message.NextAttemptAt, message.Id })
             .HasDatabaseName("ix_outbox_messages_pending_next_attempt")
-            .HasFilter("\"processed_at\" IS NULL");
+            .HasFilter("\"processed_at\" IS NULL AND \"failed_at\" IS NULL");
     }
 }

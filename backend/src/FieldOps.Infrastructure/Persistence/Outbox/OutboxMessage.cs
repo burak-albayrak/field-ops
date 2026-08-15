@@ -12,6 +12,8 @@ public class OutboxMessage
 
     public DateTime? ProcessedAt { get; private set; }
 
+    public DateTime? FailedAt { get; private set; }
+
     public int AttemptCount { get; private set; }
 
     public DateTime NextAttemptAt { get; private set; }
@@ -26,6 +28,7 @@ public class OutboxMessage
         Payload = payload;
         CreatedAt = createdAt;
         ProcessedAt = null;
+        FailedAt = null;
         AttemptCount = 0;
         NextAttemptAt = createdAt;
         LockedUntil = null;

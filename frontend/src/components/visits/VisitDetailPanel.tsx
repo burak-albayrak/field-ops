@@ -1,4 +1,8 @@
 import { ApiError } from '../../api/client'
+import {
+  formatPlannedDate,
+  formatUtcTimestamp,
+} from '../../features/visits/dateFormatting'
 import { useVisit } from '../../features/visits/queries'
 import { ErrorState } from '../common/ErrorState'
 import { LoadingState } from '../common/LoadingState'
@@ -9,20 +13,6 @@ import { StartVisitForm } from './StartVisitForm'
 type VisitDetailPanelProps = {
   visitId: number | null
   onBack: () => void
-}
-
-const utcDateTimeFormatter = new Intl.DateTimeFormat('en-GB', {
-  dateStyle: 'medium',
-  timeStyle: 'short',
-  timeZone: 'UTC',
-})
-
-function formatTimestamp(value: string | null) {
-  if (value === null) {
-    return '—'
-  }
-
-  return `${utcDateTimeFormatter.format(new Date(value))} UTC`
 }
 
 function isVisitNotFound(error: Error | null) {
@@ -46,12 +36,7 @@ export function VisitDetailPanel({
   const visitQuery = useVisit(visitId)
 
   if (visitId === null) {
-    return (
-      <div className="detail-panel detail-panel--empty">
-        <h3>Select a visit</h3>
-        <p>Choose a visit from the list to see its details.</p>
-      </div>
-    )
+    return null
   }
 
   if (visitQuery.isPending) {
@@ -119,11 +104,15 @@ export function VisitDetailPanel({
           <dd>
             {visit.employee.name}
             <span>{visit.employee.email}</span>
+            <span>ID {visit.employee.id}</span>
           </dd>
         </div>
         <div>
           <dt>Store</dt>
-          <dd>{visit.store.name}</dd>
+          <dd>
+            {visit.store.name}
+            <span>ID {visit.store.id}</span>
+          </dd>
         </div>
         <div>
           <dt>Country</dt>
@@ -132,24 +121,26 @@ export function VisitDetailPanel({
         <div>
           <dt>Planned Date</dt>
           <dd>
-            <time dateTime={visit.plannedDate}>{visit.plannedDate}</time>
+            <time dateTime={visit.plannedDate}>
+              {formatPlannedDate(visit.plannedDate)}
+            </time>
           </dd>
         </div>
         <div>
           <dt>Created At</dt>
           <dd>
             <time dateTime={visit.createdAt}>
-              {formatTimestamp(visit.createdAt)}
+              {formatUtcTimestamp(visit.createdAt)}
             </time>
           </dd>
         </div>
         <div>
           <dt>Started At</dt>
-          <dd>{formatTimestamp(visit.startedAt)}</dd>
+          <dd>{formatUtcTimestamp(visit.startedAt)}</dd>
         </div>
         <div>
           <dt>Completed At</dt>
-          <dd>{formatTimestamp(visit.completedAt)}</dd>
+          <dd>{formatUtcTimestamp(visit.completedAt)}</dd>
         </div>
         <div>
           <dt>Start Location</dt>

@@ -24,6 +24,7 @@ public class AnalyticsClientTests
         var result = await client.SendAsync(CreateMessage());
 
         Assert.True(result.IsSuccess);
+        Assert.False(result.ShouldRetry);
         Assert.Null(result.Error);
         Assert.Equal(HttpMethod.Post, handler.Method);
         Assert.Equal(new Uri("https://analytics.example.com/events"), handler.RequestUri);
@@ -32,10 +33,13 @@ public class AnalyticsClientTests
     }
 
     [Theory]
-    [InlineData(HttpStatusCode.Found, "Analytics returned HTTP 302.")]
+    [InlineData(HttpStatusCode.RequestTimeout, "Analytics returned HTTP 408.")]
+    [InlineData(HttpStatusCode.TooManyRequests, "Analytics returned HTTP 429.")]
     [InlineData(HttpStatusCode.InternalServerError, "Analytics returned HTTP 500.")]
-    [InlineData(HttpStatusCode.BadRequest, "Analytics returned HTTP 400.")]
-    public async Task Non_2xx_response_is_retryable_failure(HttpStatusCode statusCode, string expectedError)
+    [InlineData(HttpStatusCode.ServiceUnavailable, "Analytics returned HTTP 503.")]
+    public async Task Transient_HTTP_response_is_retryable_failure(
+        HttpStatusCode statusCode,
+        string expectedError)
     {
         var handler = new StubHttpMessageHandler((_, _) =>
             Task.FromResult(new HttpResponseMessage(statusCode)));
@@ -45,6 +49,30 @@ public class AnalyticsClientTests
         var result = await client.SendAsync(CreateMessage());
 
         Assert.False(result.IsSuccess);
+        Assert.True(result.ShouldRetry);
+        Assert.Equal(expectedError, result.Error);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Found, "Analytics returned HTTP 302.")]
+    [InlineData(HttpStatusCode.BadRequest, "Analytics returned HTTP 400.")]
+    [InlineData(HttpStatusCode.Unauthorized, "Analytics returned HTTP 401.")]
+    [InlineData(HttpStatusCode.Forbidden, "Analytics returned HTTP 403.")]
+    [InlineData(HttpStatusCode.NotFound, "Analytics returned HTTP 404.")]
+    [InlineData(HttpStatusCode.UnprocessableEntity, "Analytics returned HTTP 422.")]
+    public async Task Permanent_HTTP_response_is_not_retryable(
+        HttpStatusCode statusCode,
+        string expectedError)
+    {
+        var handler = new StubHttpMessageHandler((_, _) =>
+            Task.FromResult(new HttpResponseMessage(statusCode)));
+        using var httpClient = CreateHttpClient(handler);
+        var client = new AnalyticsClient(httpClient, NullLogger<AnalyticsClient>.Instance);
+
+        var result = await client.SendAsync(CreateMessage());
+
+        Assert.False(result.IsSuccess);
+        Assert.False(result.ShouldRetry);
         Assert.Equal(expectedError, result.Error);
     }
 
@@ -59,6 +87,7 @@ public class AnalyticsClientTests
         var result = await client.SendAsync(CreateMessage());
 
         Assert.False(result.IsSuccess);
+        Assert.True(result.ShouldRetry);
         Assert.Equal("Analytics request failed.", result.Error);
     }
 
@@ -74,6 +103,7 @@ public class AnalyticsClientTests
         var result = await client.SendAsync(CreateMessage());
 
         Assert.False(result.IsSuccess);
+        Assert.True(result.ShouldRetry);
         Assert.Equal("Analytics request timed out.", result.Error);
     }
 

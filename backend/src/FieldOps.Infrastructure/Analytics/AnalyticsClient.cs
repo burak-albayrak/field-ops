@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text;
 using FieldOps.Infrastructure.Persistence.Outbox;
 using Microsoft.Extensions.Logging;
@@ -37,22 +38,32 @@ public class AnalyticsClient : IAnalyticsClient
                 return AnalyticsDeliveryResult.Success();
             }
 
-            // Case kapsamında tüm non-2xx yanıtlar retry edilir; production sözleşmeleri 4xx/5xx'i farklı sınıflandırabilir.
+            // Yalnızca geçici HTTP durumları retry edilir; normal 4xx yanıtları aynı isteği tekrarlamakla düzelmez.
             var error = $"Analytics returned HTTP {(int)response.StatusCode}.";
             _logger.LogWarning("Analytics delivery returned HTTP {StatusCode} for Outbox message {OutboxId}.",
                 (int)response.StatusCode,
                 message.Id);
-            return AnalyticsDeliveryResult.Failure(error);
+            return IsTransient(response.StatusCode)
+                ? AnalyticsDeliveryResult.TransientFailure(error)
+                : AnalyticsDeliveryResult.PermanentFailure(error);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             _logger.LogWarning("Analytics delivery timed out for Outbox message {OutboxId}.", message.Id);
-            return AnalyticsDeliveryResult.Failure("Analytics request timed out.");
+            return AnalyticsDeliveryResult.TransientFailure("Analytics request timed out.");
         }
         catch (HttpRequestException exception)
         {
             _logger.LogWarning(exception, "Analytics request failed for Outbox message {OutboxId}.", message.Id);
-            return AnalyticsDeliveryResult.Failure("Analytics request failed.");
+            return AnalyticsDeliveryResult.TransientFailure("Analytics request failed.");
         }
+    }
+
+    private static bool IsTransient(HttpStatusCode statusCode)
+    {
+        var numericStatusCode = (int)statusCode;
+
+        return statusCode is HttpStatusCode.RequestTimeout or HttpStatusCode.TooManyRequests
+            || numericStatusCode is >= 500 and <= 599;
     }
 }

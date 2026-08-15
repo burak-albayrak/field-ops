@@ -87,8 +87,34 @@ public class OutboxProcessor
         }
 
         var failureTime = DateTime.UtcNow;
-        var nextAttemptAt = failureTime.Add(_retryBackoff.CalculateDelay(message.AttemptCount));
         var error = deliveryResult.Error ?? UnexpectedDeliveryError;
+
+        if (!deliveryResult.ShouldRetry)
+        {
+            var permanentlyFailedMarked = await _repository.MarkPermanentlyFailedAsync(
+                message.Id,
+                message.LockedUntil,
+                failureTime,
+                error,
+                cancellationToken);
+
+            if (permanentlyFailedMarked)
+            {
+                _logger.LogWarning(
+                    "Outbox message {OutboxId} permanently failed after {PreviousAttemptCount} previous failures. Error: {Error}",
+                    message.Id,
+                    message.AttemptCount,
+                    error);
+            }
+            else
+            {
+                LogLostLease(message.Id);
+            }
+
+            return;
+        }
+
+        var nextAttemptAt = failureTime.Add(_retryBackoff.CalculateDelay(message.AttemptCount));
         var failedMarked = await _repository.MarkFailedAsync(
             message.Id,
             message.LockedUntil,
@@ -117,7 +143,7 @@ public class OutboxProcessor
     {
         if (!string.Equals(message.Type, OutboxWriter.VisitCompletedType, StringComparison.Ordinal))
         {
-            return AnalyticsDeliveryResult.Failure(UnsupportedTypeError);
+            return AnalyticsDeliveryResult.PermanentFailure(UnsupportedTypeError);
         }
 
         try
@@ -131,7 +157,7 @@ public class OutboxProcessor
         catch (Exception exception)
         {
             _logger.LogError(exception, "Unexpected Analytics error for Outbox message {OutboxId}.", message.Id);
-            return AnalyticsDeliveryResult.Failure(UnexpectedDeliveryError);
+            return AnalyticsDeliveryResult.TransientFailure(UnexpectedDeliveryError);
         }
     }
 

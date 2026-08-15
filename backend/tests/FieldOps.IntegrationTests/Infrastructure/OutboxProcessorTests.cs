@@ -32,16 +32,17 @@ public sealed class OutboxProcessorTests : IntegrationTestBase
         Assert.Equal(1, analytics.CallCount);
         var persisted = await LoadMessageAsync(messageId);
         Assert.NotNull(persisted.ProcessedAt);
+        Assert.Null(persisted.FailedAt);
         Assert.Null(persisted.LockedUntil);
         Assert.Equal(0, persisted.AttemptCount);
         Assert.Null(persisted.LastError);
     }
 
     [Fact]
-    public async Task Failed_delivery_schedules_retry_and_records_safe_error()
+    public async Task Transient_delivery_failure_schedules_retry_and_records_safe_error()
     {
         var messageId = await SeedMessageAsync(OutboxWriter.VisitCompletedType);
-        var analytics = new FakeAnalyticsClient(AnalyticsDeliveryResult.Failure(DeliveryError));
+        var analytics = new FakeAnalyticsClient(AnalyticsDeliveryResult.TransientFailure(DeliveryError));
         var beforeFailure = DateTime.UtcNow;
 
         var claimedCount = await ProcessBatchAsync(analytics);
@@ -50,6 +51,7 @@ public sealed class OutboxProcessorTests : IntegrationTestBase
         Assert.Equal(1, claimedCount);
         var persisted = await LoadMessageAsync(messageId);
         Assert.Null(persisted.ProcessedAt);
+        Assert.Null(persisted.FailedAt);
         Assert.Null(persisted.LockedUntil);
         Assert.Equal(1, persisted.AttemptCount);
         Assert.Equal(DeliveryError, persisted.LastError);
@@ -60,7 +62,34 @@ public sealed class OutboxProcessorTests : IntegrationTestBase
     }
 
     [Fact]
-    public async Task Unsupported_type_uses_failure_lifecycle_without_calling_analytics()
+    public async Task Permanent_delivery_failure_sets_failed_at_and_is_not_claimed_again()
+    {
+        const string permanentError = "Analytics returned HTTP 400.";
+        var messageId = await SeedMessageAsync(OutboxWriter.VisitCompletedType);
+        var beforeFailure = DateTime.UtcNow;
+        var analytics = new FakeAnalyticsClient(
+            AnalyticsDeliveryResult.PermanentFailure(permanentError),
+            AnalyticsDeliveryResult.Success());
+
+        var claimedCount = await ProcessBatchAsync(analytics);
+
+        var afterFailure = DateTime.UtcNow;
+        Assert.Equal(1, claimedCount);
+        Assert.Equal(1, analytics.CallCount);
+        var persisted = await LoadMessageAsync(messageId);
+        Assert.Null(persisted.ProcessedAt);
+        Assert.InRange(persisted.FailedAt!.Value, beforeFailure, afterFailure);
+        Assert.Null(persisted.LockedUntil);
+        Assert.Equal(1, persisted.AttemptCount);
+        Assert.Equal(permanentError, persisted.LastError);
+        Assert.Equal(persisted.CreatedAt, persisted.NextAttemptAt);
+
+        Assert.Equal(0, await ProcessBatchAsync(analytics));
+        Assert.Equal(1, analytics.CallCount);
+    }
+
+    [Fact]
+    public async Task Unsupported_type_is_permanently_failed_without_calling_analytics()
     {
         var messageId = await SeedMessageAsync("UnknownEvent");
         var analytics = new FakeAnalyticsClient(AnalyticsDeliveryResult.Success());
@@ -71,10 +100,11 @@ public sealed class OutboxProcessorTests : IntegrationTestBase
         Assert.Equal(0, analytics.CallCount);
         var persisted = await LoadMessageAsync(messageId);
         Assert.Null(persisted.ProcessedAt);
+        Assert.NotNull(persisted.FailedAt);
         Assert.Null(persisted.LockedUntil);
         Assert.Equal(1, persisted.AttemptCount);
         Assert.Equal("Unsupported outbox message type.", persisted.LastError);
-        Assert.True(persisted.NextAttemptAt > persisted.CreatedAt);
+        Assert.Equal(persisted.CreatedAt, persisted.NextAttemptAt);
     }
 
     [Fact]
@@ -83,7 +113,7 @@ public sealed class OutboxProcessorTests : IntegrationTestBase
         var firstId = await SeedMessageAsync(OutboxWriter.VisitCompletedType);
         var secondId = await SeedMessageAsync(OutboxWriter.VisitCompletedType);
         var analytics = new FakeAnalyticsClient(
-            AnalyticsDeliveryResult.Failure(DeliveryError),
+            AnalyticsDeliveryResult.TransientFailure(DeliveryError),
             AnalyticsDeliveryResult.Success());
 
         var claimedCount = await ProcessBatchAsync(analytics);
@@ -95,7 +125,9 @@ public sealed class OutboxProcessorTests : IntegrationTestBase
         Assert.Equal(1, first.AttemptCount);
         Assert.Equal(DeliveryError, first.LastError);
         Assert.Null(first.ProcessedAt);
+        Assert.Null(first.FailedAt);
         Assert.NotNull(second.ProcessedAt);
+        Assert.Null(second.FailedAt);
         Assert.Equal(0, second.AttemptCount);
         Assert.Null(second.LastError);
     }
@@ -114,6 +146,7 @@ public sealed class OutboxProcessorTests : IntegrationTestBase
         Assert.Equal(0, analytics.CallCount);
         var persisted = await LoadMessageAsync(messageId);
         Assert.Null(persisted.ProcessedAt);
+        Assert.Null(persisted.FailedAt);
         Assert.Null(persisted.LockedUntil);
         Assert.Equal(0, persisted.AttemptCount);
         Assert.Null(persisted.LastError);

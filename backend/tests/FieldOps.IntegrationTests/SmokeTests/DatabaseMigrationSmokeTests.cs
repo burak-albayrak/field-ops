@@ -18,6 +18,7 @@ public sealed class DatabaseMigrationSmokeTests : IntegrationTestBase
 
         Assert.Contains("20260813202257_InitialCreate", appliedMigrations);
         Assert.Contains("20260814130126_AddOutboxMessages", appliedMigrations);
+        Assert.Contains("20260815185101_AddOutboxFailedAt", appliedMigrations);
         Assert.Empty(pendingMigrations);
     }
 }

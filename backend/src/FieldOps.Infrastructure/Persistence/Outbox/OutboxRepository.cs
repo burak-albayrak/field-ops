@@ -41,6 +41,7 @@ public class OutboxRepository
             .AsNoTracking()
             .Where(message =>
                 message.ProcessedAt == null
+                && message.FailedAt == null
                 && message.NextAttemptAt <= nowUtc
                 && (message.LockedUntil == null || message.LockedUntil <= nowUtc))
             .OrderBy(message => message.NextAttemptAt)
@@ -57,6 +58,7 @@ public class OutboxRepository
                 .Where(message =>
                     message.Id == candidateId
                     && message.ProcessedAt == null
+                    && message.FailedAt == null
                     && message.NextAttemptAt <= nowUtc
                     && (message.LockedUntil == null || message.LockedUntil <= nowUtc))
                 .ExecuteUpdateAsync(
@@ -73,6 +75,7 @@ public class OutboxRepository
                 .Where(message =>
                     message.Id == candidateId
                     && message.ProcessedAt == null
+                    && message.FailedAt == null
                     && message.LockedUntil == leaseUntil)
                 .Select(message => new ClaimedOutboxMessage(
                     message.Id,
@@ -113,6 +116,7 @@ public class OutboxRepository
             .Where(message =>
                 message.Id == id
                 && message.ProcessedAt == null
+                && message.FailedAt == null
                 && message.LockedUntil == expectedLockedUntil)
             .ExecuteUpdateAsync(
                 setters => setters
@@ -139,11 +143,40 @@ public class OutboxRepository
             .Where(message =>
                 message.Id == id
                 && message.ProcessedAt == null
+                && message.FailedAt == null
                 && message.LockedUntil == expectedLockedUntil)
             .ExecuteUpdateAsync(
                 setters => setters
                     .SetProperty(message => message.AttemptCount, message => message.AttemptCount + 1)
                     .SetProperty(message => message.NextAttemptAt, nextAttemptAtUtc)
+                    .SetProperty(message => message.LastError, error)
+                    .SetProperty(message => message.LockedUntil, (DateTime?)null),
+                cancellationToken);
+
+        return affectedRows == 1;
+    }
+
+    public async Task<bool> MarkPermanentlyFailedAsync(
+        long id,
+        DateTime expectedLockedUntil,
+        DateTime failedAtUtc,
+        string error,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureUtc(expectedLockedUntil, nameof(expectedLockedUntil));
+        EnsureUtc(failedAtUtc, nameof(failedAtUtc));
+
+        // Permanent sonuç da aynı lease token'ıyla yazılır; eski worker terminal durumu belirleyemez.
+        var affectedRows = await _context.OutboxMessages
+            .Where(message =>
+                message.Id == id
+                && message.ProcessedAt == null
+                && message.FailedAt == null
+                && message.LockedUntil == expectedLockedUntil)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(message => message.AttemptCount, message => message.AttemptCount + 1)
+                    .SetProperty(message => message.FailedAt, (DateTime?)failedAtUtc)
                     .SetProperty(message => message.LastError, error)
                     .SetProperty(message => message.LockedUntil, (DateTime?)null),
                 cancellationToken);

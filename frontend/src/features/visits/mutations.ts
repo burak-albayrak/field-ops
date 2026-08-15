@@ -1,11 +1,28 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ApiError } from '../../api/client'
-import { completeVisit, startVisit } from '../../api/visits'
+import { completeVisit, createVisit, startVisit } from '../../api/visits'
 import type {
   CompleteVisitRequest,
+  CreateVisitRequest,
   StartVisitRequest,
 } from '../../types/visit'
 import { visitQueryKeys } from './queries'
+
+export function useCreateVisit() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (request: CreateVisitRequest) => createVisit(request),
+    retry: false,
+    onSuccess: async (visit) => {
+      queryClient.setQueryData(visitQueryKeys.detail(visit.id), visit)
+
+      await queryClient.invalidateQueries({
+        queryKey: visitQueryKeys.lists(),
+      })
+    },
+  })
+}
 
 export function useStartVisit(visitId: number) {
   const queryClient = useQueryClient()

@@ -1,4 +1,5 @@
 import { StatusBadge } from '../common/StatusBadge'
+import { formatPlannedDate } from '../../features/visits/dateFormatting'
 import type { VisitListItem as VisitListItemType } from '../../types/visit'
 
 type VisitListItemProps = {
@@ -31,15 +32,20 @@ export function VisitListItem({
         <span className="visit-row__field">
           <span className="visit-row__label">Employee</span>
           <span>{visit.employeeName}</span>
+          <span className="visit-row__meta">ID {visit.employeeId}</span>
         </span>
         <span className="visit-row__field">
           <span className="visit-row__label">Store</span>
           <span>{visit.storeName}</span>
-          <span className="visit-row__meta">{visit.countryCode}</span>
+          <span className="visit-row__meta">
+            ID {visit.storeId} · {visit.countryCode}
+          </span>
         </span>
         <span className="visit-row__field">
           <span className="visit-row__label">Planned</span>
-          <time dateTime={visit.plannedDate}>{visit.plannedDate}</time>
+          <time dateTime={visit.plannedDate}>
+            {formatPlannedDate(visit.plannedDate)}
+          </time>
         </span>
         <span className="visit-row__field visit-row__status">
           <span className="visit-row__label">Status</span>

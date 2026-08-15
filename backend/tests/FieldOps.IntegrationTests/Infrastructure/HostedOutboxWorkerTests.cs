@@ -53,6 +53,7 @@ public sealed class HostedOutboxWorkerTests : IntegrationTestBase
 
         var outbox = (await LoadSingleOutboxOrDefaultAsync())!;
         Assert.Null(outbox.ProcessedAt);
+        Assert.Null(outbox.FailedAt);
         Assert.True(outbox.AttemptCount >= 1);
         Assert.Null(outbox.LockedUntil);
         Assert.Equal("Analytics returned HTTP 503.", outbox.LastError);
@@ -85,6 +86,7 @@ public sealed class HostedOutboxWorkerTests : IntegrationTestBase
 
         var outbox = (await LoadSingleOutboxOrDefaultAsync())!;
         Assert.NotNull(outbox.ProcessedAt);
+        Assert.Null(outbox.FailedAt);
         Assert.Equal(1, outbox.AttemptCount);
         Assert.Null(outbox.LockedUntil);
         Assert.Null(outbox.LastError);
@@ -124,6 +126,7 @@ public sealed class HostedOutboxWorkerTests : IntegrationTestBase
 
         var outbox = (await LoadSingleOutboxOrDefaultAsync())!;
         Assert.NotNull(outbox.ProcessedAt);
+        Assert.Null(outbox.FailedAt);
         Assert.Equal(1, outbox.AttemptCount);
         Assert.Null(outbox.LockedUntil);
         Assert.Null(outbox.LastError);
@@ -152,6 +155,7 @@ public sealed class HostedOutboxWorkerTests : IntegrationTestBase
 
         var outbox = await LoadOutboxMessageAsync(messageId);
         Assert.NotNull(outbox.ProcessedAt);
+        Assert.Null(outbox.FailedAt);
         Assert.Null(outbox.LockedUntil);
         Assert.Equal(0, outbox.AttemptCount);
         Assert.Null(outbox.LastError);
@@ -179,6 +183,7 @@ public sealed class HostedOutboxWorkerTests : IntegrationTestBase
             var claimed = await LoadOutboxMessageAsync(messageId);
             Assert.NotNull(claimed.LockedUntil);
             Assert.Null(claimed.ProcessedAt);
+            Assert.Null(claimed.FailedAt);
             Assert.Equal(0, claimed.AttemptCount);
         }
         finally
@@ -192,6 +197,7 @@ public sealed class HostedOutboxWorkerTests : IntegrationTestBase
         var abandoned = await LoadOutboxMessageAsync(messageId);
         var abandonedLease = Assert.IsType<DateTime>(abandoned.LockedUntil);
         Assert.Null(abandoned.ProcessedAt);
+        Assert.Null(abandoned.FailedAt);
         Assert.Equal(0, abandoned.AttemptCount);
         Assert.Null(abandoned.LastError);
 
@@ -206,6 +212,7 @@ public sealed class HostedOutboxWorkerTests : IntegrationTestBase
 
         var recovered = await LoadOutboxMessageAsync(messageId);
         Assert.NotNull(recovered.ProcessedAt);
+        Assert.Null(recovered.FailedAt);
         Assert.Null(recovered.LockedUntil);
         Assert.Equal(0, recovered.AttemptCount);
         Assert.Null(recovered.LastError);
@@ -244,6 +251,7 @@ public sealed class HostedOutboxWorkerTests : IntegrationTestBase
         Assert.All(finalMessages, message =>
         {
             Assert.NotNull(message.ProcessedAt);
+            Assert.Null(message.FailedAt);
             Assert.Null(message.LockedUntil);
             Assert.Equal(0, message.AttemptCount);
             Assert.Null(message.LastError);

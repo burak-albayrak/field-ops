@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useVisits } from '../../features/visits/queries'
-import type { VisitListParams } from '../../types/visit'
+import type { Visit, VisitListParams } from '../../types/visit'
+import { CreateVisitForm } from './CreateVisitForm'
 import { PaginationControls } from './PaginationControls'
 import { VisitDetailPanel } from './VisitDetailPanel'
 import { VisitFilters } from './VisitFilters'
@@ -14,6 +15,9 @@ export function VisitListSection() {
     useState<AppliedVisitFilters>({})
   const [page, setPage] = useState(1)
   const [selectedVisitId, setSelectedVisitId] = useState<number | null>(null)
+  const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const [isCreatePending, setIsCreatePending] = useState(false)
+  const [filterResetKey, setFilterResetKey] = useState(0)
 
   const queryParams: VisitListParams = {
     ...appliedFilters,
@@ -45,6 +49,31 @@ export function VisitListSection() {
     setPage((currentPage) => currentPage + 1)
   }
 
+  function handleCreateToggle() {
+    if (!isCreateOpen) {
+      setSelectedVisitId(null)
+    }
+
+    setIsCreateOpen(!isCreateOpen)
+  }
+
+  function handleVisitSelect(visitId: number) {
+    if (isCreatePending) {
+      return
+    }
+
+    setIsCreateOpen(false)
+    setSelectedVisitId(visitId)
+  }
+
+  function handleVisitCreated(visit: Visit) {
+    setAppliedFilters({})
+    setPage(1)
+    setFilterResetKey((currentKey) => currentKey + 1)
+    setIsCreateOpen(false)
+    setSelectedVisitId(visit.id)
+  }
+
   const workspaceClassName = selectedVisitId
     ? 'visit-workspace visit-workspace--detail'
     : 'visit-workspace visit-workspace--list'
@@ -53,19 +82,36 @@ export function VisitListSection() {
     <section className="visit-section" aria-labelledby="visits-heading">
       <div className="visit-section__heading">
         <div>
-          <p className="visit-section__eyebrow">Workspace</p>
           <h2 id="visits-heading">Visits</h2>
         </div>
-        <p>Current field activity across employees and stores.</p>
+        <button
+          type="button"
+          className="button-primary visit-section__create-button"
+          aria-expanded={isCreateOpen}
+          aria-controls="create-visit-form"
+          disabled={isCreatePending}
+          onClick={handleCreateToggle}
+        >
+          {isCreateOpen ? 'Close Create Form' : 'Create Visit'}
+        </button>
       </div>
 
-      <div className={workspaceClassName}>
-        <div className="visit-workspace__list">
-          <VisitFilters
-            onApply={handleApplyFilters}
-            onClear={handleClearFilters}
-          />
+      {isCreateOpen ? (
+        <CreateVisitForm
+          onCancel={() => setIsCreateOpen(false)}
+          onCreated={handleVisitCreated}
+          onPendingChange={setIsCreatePending}
+        />
+      ) : null}
 
+      <div className={workspaceClassName}>
+        <VisitFilters
+          key={filterResetKey}
+          onApply={handleApplyFilters}
+          onClear={handleClearFilters}
+        />
+
+        <div className="visit-workspace__list">
           <VisitList
             data={visitsQuery.data}
             isError={visitsQuery.isError}
@@ -74,7 +120,7 @@ export function VisitListSection() {
             hasAppliedFilters={hasAppliedFilters}
             selectedVisitId={selectedVisitId}
             onRetry={() => void visitsQuery.refetch()}
-            onVisitSelect={setSelectedVisitId}
+            onVisitSelect={handleVisitSelect}
           />
 
           <PaginationControls

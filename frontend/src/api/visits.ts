@@ -1,5 +1,6 @@
 import type {
   CompleteVisitRequest,
+  CreateVisitRequest,
   StartVisitRequest,
   Visit,
   VisitListParams,
@@ -43,6 +44,16 @@ export function getVisits(params: VisitListParams) {
 
 export function getVisit(id: number) {
   return apiRequest<Visit>(`/api/visits/${id}`)
+}
+
+export function createVisit(request: CreateVisitRequest) {
+  return apiRequest<Visit>('/api/visits', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(request),
+  })
 }
 
 export function startVisit(id: number, request: StartVisitRequest) {

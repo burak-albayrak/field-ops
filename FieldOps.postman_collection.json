@@ -1,0 +1,1760 @@
+{
+  "info": {
+    "_postman_id": "4f5b2ec6-967a-48a6-b353-202608150001",
+    "name": "FieldOps API - Complete Requirements",
+    "description": "# FieldOps API\n\nThis collection is based on the current worktree controller, DTO, ProblemDetails and integration-test contracts.\n\nRun folders 00-05 in order against a disposable/demo database. Setup discovers Employee/Store IDs and Store coordinates from demo Visit data because the project intentionally has no Employee/Store catalog endpoints. Scenario dates are regenerated on every setup run.\n\nDefault `baseUrl`: `http://localhost:18080`. For live verification change it to `https://fieldops.161-35-23-78.sslip.io`.\n\nCoverage: `/health`, Development-only `/openapi/v1.json`, every Visit endpoint, every list filter, pagination, sorting, empty state, validation, create/duplicate rules, start/distance rules, completion/idempotency, cancel/concurrency and missing-resource errors.\n\nRequirement 11's Analytics URL is included in folder 06 as a manual external contract. It is not a FieldOps public endpoint and the supplied domain is a placeholder.\n\nRequirement 12 asks for a design rather than new offline endpoints. The collection therefore does not invent sync routes; it demonstrates implemented duplicate/conflict behavior and Complete retry idempotency.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:18080",
+      "type": "string"
+    },
+    {
+      "key": "liveBaseUrl",
+      "value": "https://fieldops.161-35-23-78.sslip.io",
+      "type": "string"
+    },
+    {
+      "key": "analyticsBaseUrl",
+      "value": "https://analytics.example.com",
+      "type": "string"
+    },
+    {
+      "key": "countryCode",
+      "value": "TR",
+      "type": "string"
+    },
+    {
+      "key": "employeeId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "storeId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "referenceVisitId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "missingEmployeeId",
+      "value": "999999999",
+      "type": "string"
+    },
+    {
+      "key": "missingStoreId",
+      "value": "999999999",
+      "type": "string"
+    },
+    {
+      "key": "missingVisitId",
+      "value": "999999999",
+      "type": "string"
+    },
+    {
+      "key": "storeLatitude",
+      "value": "39.9334",
+      "type": "string"
+    },
+    {
+      "key": "storeLongitude",
+      "value": "32.8597",
+      "type": "string"
+    },
+    {
+      "key": "farLatitude",
+      "value": "40.9334",
+      "type": "string"
+    },
+    {
+      "key": "filterStartDate",
+      "value": "2026-07-16",
+      "type": "string"
+    },
+    {
+      "key": "filterEndDate",
+      "value": "2026-08-15",
+      "type": "string"
+    },
+    {
+      "key": "happyDate",
+      "value": "2080-01-01",
+      "type": "string"
+    },
+    {
+      "key": "cancelledDate",
+      "value": "2080-01-02",
+      "type": "string"
+    },
+    {
+      "key": "invalidStatusDate",
+      "value": "2080-01-03",
+      "type": "string"
+    },
+    {
+      "key": "cancelConcurrencyDate",
+      "value": "2080-01-04",
+      "type": "string"
+    },
+    {
+      "key": "lifecycleVisitId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "lifecycleVersion",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "cancelledVisitId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "replacementVisitId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "invalidStatusVisitId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "cancelConcurrencyVisitId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "cancelConcurrencyVersion",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "completedAt",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "completedNotes",
+      "value": "Store visit completed successfully.",
+      "type": "string"
+    },
+    {
+      "key": "completedVersion",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "00 Setup and Infrastructure",
+      "description": "Run first. Infrastructure checks and discovery of the existing demo Employee/Store pair.",
+      "item": [
+        {
+          "name": "Health",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Healthy JSON response', function () {",
+                  "  pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/json');",
+                  "  pm.expect(pm.response.json().status).to.eql('Healthy');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health",
+            "description": "Backend and PostgreSQL readiness. Public SPA HTML here indicates a reverse-proxy health-route problem."
+          },
+          "response": []
+        },
+        {
+          "name": "OpenAPI document (Development only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Development 200 or intentional Production 404', () => pm.expect([200, 404]).to.include(pm.response.code));",
+                  "if (pm.response.code === 200) {",
+                  "  const paths = pm.response.json().paths;",
+                  "  pm.test('All Visit paths documented', function () {",
+                  "    ['/api/visits','/api/visits/{id}','/api/visits/{id}/start','/api/visits/{id}/complete','/api/visits/{id}/cancel'].forEach(path => pm.expect(paths).to.have.property(path));",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/openapi/v1.json",
+            "description": "OpenAPI is intentionally mapped only in Development."
+          },
+          "response": []
+        },
+        {
+          "name": "Initialize variables from Visit list",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('JSON response', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/json'));",
+                  "const body = pm.response.json();",
+                  "pm.test('Demo Visit exists', () => pm.expect(body.items.length, 'Enable DemoData or set IDs manually').to.be.above(0));",
+                  "if (body.items.length) {",
+                  "  const v = body.items.find(x => x.countryCode === pm.collectionVariables.get('countryCode')) || body.items[0];",
+                  "  pm.collectionVariables.set('referenceVisitId', String(v.id));",
+                  "  pm.collectionVariables.set('employeeId', String(v.employeeId));",
+                  "  pm.collectionVariables.set('storeId', String(v.storeId));",
+                  "}",
+                  "const iso = d => d.toISOString().slice(0, 10);",
+                  "const today = new Date();",
+                  "pm.collectionVariables.set('filterEndDate', iso(today));",
+                  "pm.collectionVariables.set('filterStartDate', iso(new Date(today.getTime() - 30 * 86400000)));",
+                  "const anchor = new Date(Date.UTC(2070, 0, 1));",
+                  "anchor.setUTCDate(anchor.getUTCDate() + ((Math.floor(Date.now()/1000) + Math.floor(Math.random()*10000)) % 10000));",
+                  "['happyDate','cancelledDate','invalidStatusDate','cancelConcurrencyDate'].forEach((key, i) => pm.collectionVariables.set(key, iso(new Date(anchor.getTime() + i * 86400000))));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/visits?countryCode={{countryCode}}&page=1&pageSize=100",
+            "description": "Discovers identifiers and creates isolated scenario dates. No Employee/Store API exists."
+          },
+          "response": []
+        },
+        {
+          "name": "Load Store coordinates",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('JSON response', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/json'));",
+                  "const v = pm.response.json();",
+                  "pm.collectionVariables.set('employeeId', String(v.employee.id));",
+                  "pm.collectionVariables.set('storeId', String(v.store.id));",
+                  "pm.collectionVariables.set('countryCode', v.store.countryCode);",
+                  "pm.collectionVariables.set('storeLatitude', String(v.store.latitude));",
+                  "pm.collectionVariables.set('storeLongitude', String(v.store.longitude));",
+                  "pm.collectionVariables.set('farLatitude', String(v.store.latitude <= 89 ? v.store.latitude + 1 : v.store.latitude - 1));",
+                  "pm.test('Store has numeric coordinates', () => { pm.expect(v.store.latitude).to.be.a('number'); pm.expect(v.store.longitude).to.be.a('number'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/visits/{{referenceVisitId}}",
+            "description": ""
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "01 Visit Listing and Detail",
+      "description": "Read endpoints and Requirement 7/8 query scenarios.",
+      "item": [
+        {
+          "name": "List Visits - defaults",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('JSON response', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/json'));",
+                  "const b = pm.response.json();",
+                  "pm.test('Default pagination contract', () => { pm.expect(b.items).to.be.an('array'); pm.expect(b.page).to.eql(1); pm.expect(b.pageSize).to.eql(20); pm.expect(b.hasNextPage).to.be.a('boolean'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/visits",
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "List Visits - all filters",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('JSON response', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/json'));",
+                  "const b = pm.response.json();",
+                  "pm.test('All returned items satisfy filters', function () { b.items.forEach(v => {",
+                  "  pm.expect(String(v.employeeId)).to.eql(pm.collectionVariables.get('employeeId'));",
+                  "  pm.expect(String(v.storeId)).to.eql(pm.collectionVariables.get('storeId'));",
+                  "  pm.expect(v.status).to.eql('Completed'); pm.expect(v.countryCode).to.eql(pm.collectionVariables.get('countryCode'));",
+                  "  pm.expect(v.plannedDate >= pm.collectionVariables.get('filterStartDate')).to.be.true;",
+                  "  pm.expect(v.plannedDate <= pm.collectionVariables.get('filterEndDate')).to.be.true;",
+                  "}); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/visits?employeeId={{employeeId}}&storeId={{storeId}}&status=Completed&countryCode={{countryCode}}&startDate={{filterStartDate}}&endDate={{filterEndDate}}&page=1&pageSize=50",
+            "description": "Covers employeeId, storeId, status, countryCode, inclusive startDate/endDate, page and pageSize."
+          },
+          "response": []
+        },
+        {
+          "name": "Performance query - TR employee Completed last 30 days",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('JSON response', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/json'));",
+                  "const a = pm.response.json().items;",
+                  "pm.test('Filter and CompletedAt descending order', function () {",
+                  "  a.forEach(v => { pm.expect(String(v.employeeId)).to.eql(pm.collectionVariables.get('employeeId')); pm.expect(v.countryCode).to.eql('TR'); pm.expect(v.status).to.eql('Completed'); });",
+                  "  for (let i=1;i<a.length;i++) {",
+                  "    const p=Date.parse(a[i-1].completedAt), c=Date.parse(a[i].completedAt); pm.expect(p>=c).to.be.true;",
+                  "    if (p===c) pm.expect(a[i-1].id>a[i].id).to.be.true;",
+                  "  }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/visits?employeeId={{employeeId}}&countryCode=TR&status=Completed&startDate={{filterStartDate}}&endDate={{filterEndDate}}&page=1&pageSize=50",
+            "description": "Requirement 8's critical query shape."
+          },
+          "response": []
+        },
+        {
+          "name": "List Planned - PlannedDate sorting",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('JSON response', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/json'));",
+                  "const a=pm.response.json().items;",
+                  "pm.test('PlannedDate DESC then Id DESC', function () { for(let i=1;i<a.length;i++){ pm.expect(a[i-1].plannedDate>=a[i].plannedDate).to.be.true; if(a[i-1].plannedDate===a[i].plannedDate) pm.expect(a[i-1].id>a[i].id).to.be.true; } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/visits?status=Planned&page=1&pageSize=100",
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "List Visits - pagination",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('JSON response', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/json'));",
+                  "const b=pm.response.json();",
+                  "pm.test('Bounded page and metadata', () => { pm.expect(b.items.length).to.be.at.most(2); pm.expect(b.page).to.eql(1); pm.expect(b.pageSize).to.eql(2); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/visits?page=1&pageSize=2",
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "List Visits - empty state",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('JSON response', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/json'));",
+                  "pm.test('Empty success', () => { const b=pm.response.json(); pm.expect(b.items).to.eql([]); pm.expect(b.hasNextPage).to.eql(false); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/visits?employeeId={{missingEmployeeId}}",
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "List Visits - invalid query",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', () => pm.response.to.have.status(400));",
+                  "pm.test('ProblemDetails response', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/problem+json'));",
+                  "pm.test('Error code: validation_error', () => pm.expect(pm.response.json().code).to.eql('validation_error'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/visits?status=Nope&page=0&pageSize=101",
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Get Visit detail",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('JSON response', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/json'));",
+                  "const v=pm.response.json();",
+                  "pm.test('Detail DTO contract', () => { pm.expect(v.id).to.be.a('number'); pm.expect(v.employee).to.have.all.keys('id','name','email','countryCode'); pm.expect(v.store).to.have.all.keys('id','name','countryCode','latitude','longitude'); pm.expect(['Planned','InProgress','Completed','Cancelled']).to.include(v.status); pm.expect(v.version).to.be.a('number'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/visits/{{referenceVisitId}}",
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Get Visit detail - not found",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 404', () => pm.response.to.have.status(404));",
+                  "pm.test('ProblemDetails response', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/problem+json'));",
+                  "pm.test('Error code: visit_not_found', () => pm.expect(pm.response.json().code).to.eql('visit_not_found'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/visits/{{missingVisitId}}",
+            "description": ""
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "02 Visit Creation",
+      "description": "Requirement 3 plus transport and missing-resource failures.",
+      "item": [
+        {
+          "name": "Create Visit - success",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201 Created', () => pm.response.to.have.status(201));",
+                  "pm.test('Location header', () => pm.expect(pm.response.headers.get('Location') || '').to.match(/\\/api\\/visits\\/\\d+$/));",
+                  "const v=pm.response.json(); pm.collectionVariables.set('lifecycleVisitId',String(v.id)); pm.collectionVariables.set('lifecycleVersion',String(v.version));",
+                  "pm.test('New Visit contract', () => { pm.expect(v.status).to.eql('Planned'); pm.expect(v.plannedDate).to.eql(pm.collectionVariables.get('happyDate')); pm.expect(v.version).to.eql(1); pm.expect(v.startedAt).to.eql(null); pm.expect(v.completedAt).to.eql(null); pm.expect(v.createdAt).to.match(/Z$/); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/visits",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"employeeId\": {{employeeId}},\n  \"storeId\": {{storeId}},\n  \"plannedDate\": \"{{happyDate}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Visit - duplicate Planned same local day",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+                  "pm.test('ProblemDetails response', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/problem+json'));",
+                  "pm.test('Error code: duplicate_visit', () => pm.expect(pm.response.json().code).to.eql('duplicate_visit'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/visits",
+            "description": "Same Employee, Store and Store-local date while active.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"employeeId\": {{employeeId}},\n  \"storeId\": {{storeId}},\n  \"plannedDate\": \"{{happyDate}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Visit - Employee not found",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 404', () => pm.response.to.have.status(404));",
+                  "pm.test('ProblemDetails response', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/problem+json'));",
+                  "pm.test('Error code: employee_not_found', () => pm.expect(pm.response.json().code).to.eql('employee_not_found'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/visits",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"employeeId\": {{missingEmployeeId}},\n  \"storeId\": {{storeId}},\n  \"plannedDate\": \"{{invalidStatusDate}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Visit - Store not found",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 404', () => pm.response.to.have.status(404));",
+                  "pm.test('ProblemDetails response', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/problem+json'));",
+                  "pm.test('Error code: store_not_found', () => pm.expect(pm.response.json().code).to.eql('store_not_found'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/visits",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"employeeId\": {{employeeId}},\n  \"storeId\": {{missingStoreId}},\n  \"plannedDate\": \"{{invalidStatusDate}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Visit - invalid payload",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', () => pm.response.to.have.status(400));",
+                  "pm.test('ProblemDetails response', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/problem+json'));",
+                  "pm.test('Error code: validation_error', () => pm.expect(pm.response.json().code).to.eql('validation_error'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/visits",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"employeeId\": 0,\n  \"storeId\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create for Cancelled exemption",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201 Created', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('cancelledVisitId',String(pm.response.json().id));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/visits",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"employeeId\": {{employeeId}},\n  \"storeId\": {{storeId}},\n  \"plannedDate\": \"{{cancelledDate}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Cancel exemption Visit",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('JSON response', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/json'));",
+                  "pm.test('Cancelled', () => { const v=pm.response.json(); pm.expect(v.status).to.eql('Cancelled'); pm.expect(v.version).to.eql(2); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/visits/{{cancelledVisitId}}/cancel",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create - Cancelled excluded from duplicate rule",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201 after Cancelled', () => pm.response.to.have.status(201));",
+                  "const v=pm.response.json(); pm.collectionVariables.set('replacementVisitId',String(v.id));",
+                  "pm.test('New Planned Visit', () => pm.expect(v.status).to.eql('Planned'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/visits",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"employeeId\": {{employeeId}},\n  \"storeId\": {{storeId}},\n  \"plannedDate\": \"{{cancelledDate}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Cleanup Cancelled exemption replacement",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('JSON response', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/json'));",
+                  "pm.test('Cancelled', () => pm.expect(pm.response.json().status).to.eql('Cancelled'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/visits/{{replacementVisitId}}/cancel",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "03 Visit Start and Distance",
+      "description": "Requirement 5 and distance/transition failures. Uses lifecycleVisitId.",
+      "item": [
+        {
+          "name": "Start - more than 200 metres away",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 422', () => pm.response.to.have.status(422));",
+                  "pm.test('ProblemDetails response', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/problem+json'));",
+                  "pm.test('Error code: visit_too_far_from_store', () => pm.expect(pm.response.json().code).to.eql('visit_too_far_from_store'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/visits/{{lifecycleVisitId}}/start",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"latitude\": {{farLatitude}},\n  \"longitude\": {{storeLongitude}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Verify far attempt did not mutate",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('JSON response', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/json'));",
+                  "pm.test('Still Planned version 1', () => { const v=pm.response.json(); pm.expect(v.status).to.eql('Planned'); pm.expect(v.version).to.eql(1); pm.expect(v.startedAt).to.eql(null); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/visits/{{lifecycleVisitId}}",
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Start - at Store coordinates",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('JSON response', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/json'));",
+                  "const v=pm.response.json(); pm.collectionVariables.set('lifecycleVersion',String(v.version));",
+                  "pm.test('InProgress with server UTC timestamp', () => { pm.expect(v.status).to.eql('InProgress'); pm.expect(v.version).to.eql(2); pm.expect(v.startedAt).to.match(/Z$/); pm.expect(v.startLatitude).to.eql(Number(pm.collectionVariables.get('storeLatitude'))); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/visits/{{lifecycleVisitId}}/start",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"latitude\": {{storeLatitude}},\n  \"longitude\": {{storeLongitude}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create - duplicate InProgress same local day",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+                  "pm.test('ProblemDetails response', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/problem+json'));",
+                  "pm.test('Error code: duplicate_visit', () => pm.expect(pm.response.json().code).to.eql('duplicate_visit'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/visits",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"employeeId\": {{employeeId}},\n  \"storeId\": {{storeId}},\n  \"plannedDate\": \"{{happyDate}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Start - repeated invalid transition",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+                  "pm.test('ProblemDetails response', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/problem+json'));",
+                  "pm.test('Error code: invalid_visit_status', () => pm.expect(pm.response.json().code).to.eql('invalid_visit_status'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/visits/{{lifecycleVisitId}}/start",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"latitude\": {{storeLatitude}},\n  \"longitude\": {{storeLongitude}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Start - invalid coordinates",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', () => pm.response.to.have.status(400));",
+                  "pm.test('ProblemDetails response', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/problem+json'));",
+                  "pm.test('Error code: validation_error', () => pm.expect(pm.response.json().code).to.eql('validation_error'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/visits/{{missingVisitId}}/start",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"latitude\": 91\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Start - Visit not found",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 404', () => pm.response.to.have.status(404));",
+                  "pm.test('ProblemDetails response', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/problem+json'));",
+                  "pm.test('Error code: visit_not_found', () => pm.expect(pm.response.json().code).to.eql('visit_not_found'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/visits/{{missingVisitId}}/start",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"latitude\": {{storeLatitude}},\n  \"longitude\": {{storeLongitude}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "04 Visit Completion and Idempotency",
+      "description": "Requirement 6, Analytics decoupling and retry behavior.",
+      "item": [
+        {
+          "name": "Complete - success",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('JSON response', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/json'));",
+                  "const v=pm.response.json(); pm.collectionVariables.set('completedAt',v.completedAt); pm.collectionVariables.set('completedVersion',String(v.version));",
+                  "pm.test('Completed with server UTC timestamp', () => { pm.expect(v.status).to.eql('Completed'); pm.expect(v.completedAt).to.match(/Z$/); pm.expect(v.notes).to.eql(pm.collectionVariables.get('completedNotes')); pm.expect(v.version).to.eql(3); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/visits/{{lifecycleVisitId}}/complete",
+            "description": "Success must not depend on Analytics availability; Visit and Outbox persistence are internal and atomic.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notes\": \"{{completedNotes}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Complete - identical operation retry",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('JSON response', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/json'));",
+                  "const v=pm.response.json();",
+                  "pm.test('Original result preserved', () => { pm.expect(v.status).to.eql('Completed'); pm.expect(v.completedAt).to.eql(pm.collectionVariables.get('completedAt')); pm.expect(v.notes).to.eql(pm.collectionVariables.get('completedNotes')); pm.expect(String(v.version)).to.eql(pm.collectionVariables.get('completedVersion')); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/visits/{{lifecycleVisitId}}/complete",
+            "description": "Models a lost mobile response and retry. No timestamp, notes, version or Outbox duplication.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notes\": \"Retry must not overwrite original notes\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get - verify idempotent persistence",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('JSON response', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/json'));",
+                  "pm.test('Persisted completion unchanged', () => { const v=pm.response.json(); pm.expect(v.completedAt).to.eql(pm.collectionVariables.get('completedAt')); pm.expect(v.notes).to.eql(pm.collectionVariables.get('completedNotes')); pm.expect(String(v.version)).to.eql(pm.collectionVariables.get('completedVersion')); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/visits/{{lifecycleVisitId}}",
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Create - Completed excluded from duplicate rule",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201 after Completed', () => pm.response.to.have.status(201));",
+                  "const v=pm.response.json(); pm.collectionVariables.set('replacementVisitId',String(v.id)); pm.test('New Planned Visit',()=>pm.expect(v.status).to.eql('Planned'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/visits",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"employeeId\": {{employeeId}},\n  \"storeId\": {{storeId}},\n  \"plannedDate\": \"{{happyDate}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Cleanup Completed exemption replacement",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('JSON response', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/json'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/visits/{{replacementVisitId}}/cancel",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Planned for invalid Complete",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201 Created', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('invalidStatusVisitId',String(pm.response.json().id));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/visits",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"employeeId\": {{employeeId}},\n  \"storeId\": {{storeId}},\n  \"plannedDate\": \"{{invalidStatusDate}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Complete - invalid Planned transition",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+                  "pm.test('ProblemDetails response', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/problem+json'));",
+                  "pm.test('Error code: invalid_visit_status', () => pm.expect(pm.response.json().code).to.eql('invalid_visit_status'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/visits/{{invalidStatusVisitId}}/complete",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notes\": \"Must be rejected\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Cleanup invalid-transition Visit",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('JSON response', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/json'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/visits/{{invalidStatusVisitId}}/cancel",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Complete - Visit not found",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 404', () => pm.response.to.have.status(404));",
+                  "pm.test('ProblemDetails response', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/problem+json'));",
+                  "pm.test('Error code: visit_not_found', () => pm.expect(pm.response.json().code).to.eql('visit_not_found'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/visits/{{missingVisitId}}/complete",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notes\": \"Missing Visit\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "05 Visit Cancel and Concurrency",
+      "description": "Additional project endpoint and optimistic concurrency.",
+      "item": [
+        {
+          "name": "Create for Cancel concurrency",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201 Created',()=>pm.response.to.have.status(201));",
+                  "const v=pm.response.json(); pm.collectionVariables.set('cancelConcurrencyVisitId',String(v.id)); pm.collectionVariables.set('cancelConcurrencyVersion',String(v.version));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/visits",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"employeeId\": {{employeeId}},\n  \"storeId\": {{storeId}},\n  \"plannedDate\": \"{{cancelConcurrencyDate}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Start for Cancel concurrency",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('JSON response', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/json'));",
+                  "const v=pm.response.json(); pm.collectionVariables.set('cancelConcurrencyVersion',String(v.version)); pm.test('Version 2',()=>pm.expect(v.version).to.eql(2));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/visits/{{cancelConcurrencyVisitId}}/start",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"latitude\": {{storeLatitude}},\n  \"longitude\": {{storeLongitude}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Cancel - stale version",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+                  "pm.test('ProblemDetails response', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/problem+json'));",
+                  "pm.test('Error code: concurrency_conflict', () => pm.expect(pm.response.json().code).to.eql('concurrency_conflict'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/visits/{{cancelConcurrencyVisitId}}/cancel",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Cancel - current version",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('JSON response', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/json'));",
+                  "const v=pm.response.json(); pm.collectionVariables.set('cancelConcurrencyVersion',String(v.version));",
+                  "pm.test('Cancelled and start data preserved',()=>{ pm.expect(v.status).to.eql('Cancelled'); pm.expect(v.version).to.eql(3); pm.expect(v.startedAt).to.not.eql(null); pm.expect(v.startLatitude).to.not.eql(null); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/visits/{{cancelConcurrencyVisitId}}/cancel",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version\": {{cancelConcurrencyVersion}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Cancel - already Cancelled",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+                  "pm.test('ProblemDetails response', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/problem+json'));",
+                  "pm.test('Error code: invalid_visit_status', () => pm.expect(pm.response.json().code).to.eql('invalid_visit_status'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/visits/{{cancelConcurrencyVisitId}}/cancel",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version\": {{cancelConcurrencyVersion}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Cancel - version missing",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', () => pm.response.to.have.status(400));",
+                  "pm.test('ProblemDetails response', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/problem+json'));",
+                  "pm.test('Error code: validation_error', () => pm.expect(pm.response.json().code).to.eql('validation_error'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/visits/{{missingVisitId}}/cancel",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Cancel - Visit not found",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 404', () => pm.response.to.have.status(404));",
+                  "pm.test('ProblemDetails response', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/problem+json'));",
+                  "pm.test('Error code: visit_not_found', () => pm.expect(pm.response.json().code).to.eql('visit_not_found'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/visits/{{missingVisitId}}/cancel",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Cancel - Completed terminal state",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+                  "pm.test('ProblemDetails response', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/problem+json'));",
+                  "pm.test('Error code: invalid_visit_status', () => pm.expect(pm.response.json().code).to.eql('invalid_visit_status'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/visits/{{lifecycleVisitId}}/cancel",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version\": {{completedVersion}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "06 External Analytics Contract - Manual",
+      "description": "Skip in automated runs unless analyticsBaseUrl points to a mock. FieldOps calls it asynchronously from the transactional Outbox worker with at-least-once delivery.",
+      "item": [
+        {
+          "name": "Analytics VisitCompleted event",
+          "event": [],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{analyticsBaseUrl}}/events",
+            "description": "Requirement 11's external placeholder contract; not a FieldOps public endpoint.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"VisitCompleted\",\n  \"visitId\": {{lifecycleVisitId}},\n  \"employeeId\": {{employeeId}},\n  \"storeId\": {{storeId}},\n  \"completedAt\": \"{{completedAt}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
