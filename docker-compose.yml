@@ -6,7 +6,7 @@ services:
       - .env
     ports:
       # 15432 ana makinedeki diğer PostgreSQL projeleriyle çakışmaz; konteyner içi standart port 5432 kalır.
-      - "15432:5432"
+      - "127.0.0.1:15432:5432"
     volumes:
       # Named volume, konteyner yeniden oluşturulsa bile veritabanı verisini korur.
       - fieldops_postgres_data:/var/lib/postgresql/data
@@ -25,7 +25,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     environment:
-      ASPNETCORE_ENVIRONMENT: Development
+      # Yerel ve ilk seed bootstrap varsayılanı Development'tır; normal production deploy .env üzerinden Production seçer.
+      ASPNETCORE_ENVIRONMENT: "${ASPNETCORE_ENVIRONMENT:-Development}"
       # Tek instance Docker geliştirmede migration otomatik uygulanır; production'da kontrollü bir migration adımı kullanılacaktır.
       Database__ApplyMigrations: "true"
       # Demo veri yalnızca Development ve bu açık bayrak birlikteyken seed edilir.
@@ -37,7 +38,7 @@ services:
       # Gerçek parola kaynakta değil, Git tarafından yok sayılan yerel .env dosyasından gelir.
       ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
     ports:
-      - "18080:8080"
+      - "127.0.0.1:18080:8080"
     depends_on:
       # Backend ileride veritabanına bağlanacağından, PostgreSQL istek kabul edene kadar başlamaz.
       postgres:
@@ -50,10 +51,38 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "18081:80"
+      - "127.0.0.1:18081:80"
     depends_on:
       - backend
     restart: unless-stopped
 
+  caddy:
+    image: caddy:2-alpine
+    container_name: fieldops-caddy
+    profiles:
+      - production
+    environment:
+      # Boş varsayılan normal profilsiz geliştirme config'ini SITE_ADDRESS olmadan parse edilebilir tutar.
+      SITE_ADDRESS: "${SITE_ADDRESS:-}"
+    entrypoint:
+      - /bin/sh
+      - -eu
+      - -c
+      - |
+        test -n "$$SITE_ADDRESS" || { echo "SITE_ADDRESS is required for the production profile." >&2; exit 1; }
+        exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+    restart: unless-stopped
+
 volumes:
   fieldops_postgres_data:
+  caddy_data:
+  caddy_config:
