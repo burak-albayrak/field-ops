@@ -1,102 +1,66 @@
-# Offline Visit Operations – Technical Design
+## Offline Çalışma – Teknik Tasarım
 
-The offline feature is not fully implemented; this document describes the proposed design for starting and completing Visits when connectivity is unreliable.
+### Client-side Storage
 
-## Client-side storage
+Mobil uygulamada verilerin kalıcı olarak cihazda tutulması gerekir. Bunun için SQLite kullanılabilir. 
 
-The mobile client would use persistent local storage such as SQLite. Besides cached Visit data, it would keep a durable `PendingOperation` queue containing:
+Native uygulamalarda iOS tarafında Core Data / SwiftData, Android tarafında ise Room gibi seçenekler de tercih edilebilir.
 
-```text
-OperationId (UUID)
-VisitId
-OperationType (Start / Complete)
-ExpectedVersion
-ClientOccurredAtUtc
-Payload
-RetryCount
-Status
-```
+Ziyaret verilerinin yanında, internete gönderilmeyi bekleyen işlemler için de local bir queue tutulur.
 
-The queue must survive application restarts. Start payloads contain coordinates; Complete payloads contain notes.
+Her işlem için örneğin şu bilgiler saklanabilir:
 
-## Synchronization
+* OperationId
+* VisitId
+* OperationType (Start / Complete)
+* ExpectedVersion
+* ClientOccurredAtUtc
+* Payload
+* RetryCount
 
-When connectivity returns, a background sync worker processes pending operations. Operations for the same Visit are sent in order; for example, an offline `Start` must be accepted before a later offline `Complete`.
+Bu kayıtların uygulama kapatılıp açılsa bile kaybolmaması gerekir.
 
-After each successful request, the client replaces its cached Visit with the server response and removes the corresponding pending operation.
+### Synchronization
 
-The server remains authoritative for state transitions, distance validation and concurrency.
+İnternet bağlantısı tekrar geldiğinde bekleyen işlemler sırayla server'a gönderilir.
 
-## Duplicate requests / idempotency
+Aynı Visit için birden fazla işlem varsa sırası korunmalıdır. Örneğin kullanıcı offline durumda önce ziyareti başlatıp sonra tamamladıysa, önce Start daha sonra Complete gönderilmelidir.
 
-A request may be processed by the server even when the response never reaches the client. Therefore every queued operation has a stable client-generated `OperationId` that is reused across retries.
+Başarılı olan işlemler local queue'dan silinir ve Visit'in güncel hali server'dan alınır.
 
-The server should persist processed operation IDs behind a unique constraint and return the previous logical result when the same operation is received again.
+### Duplicate Request
 
-Completion is also logically idempotent: retrying an already successfully completed Visit must not change `CompletedAt`, increment its version or create another Analytics outbox event.
+Aynı istek bağlantı problemi nedeniyle birden fazla kez gönderilebilir.
 
-## Conflict resolution
+Bunu önlemek için her işlem client tarafında oluşturulan unique bir `OperationId` ile gönderilir. Server daha önce aynı `OperationId`'yi işlediyse işlemi tekrar uygulamak yerine önceki sonucu döndürür.
 
-Each pending operation includes the `ExpectedVersion` of the Visit known when the user acted.
+Bu sayede örneğin aynı Complete isteği tekrar geldiğinde `CompletedAt` değişmez ve ikinci kez Analytics eventi oluşturulmaz.
 
-Example:
+### Conflict Resolution
 
-```text
-Client has Version 3
-Another user cancels Visit -> Version 4
-Offline client later sends Complete with Version 3
-```
+Client işlem yaparken Visit'in bildiği son `Version` bilgisini de gönderir.
 
-The stale operation must not overwrite the newer server state. The server returns a conflict and the client refreshes the Visit.
+Örneğin client Version 3'e sahipken başka bir kullanıcı Visit'i değiştirip Version 4 yaptıysa, eski Version 3 üzerinden gelen işlem doğrudan uygulanmamalıdır.
 
-Conflicts are handled as follows:
+Server bu durumda conflict döner ve client güncel Visit bilgisini tekrar alır.
 
-```text
-Server already reflects the same logical action
-    -> treat as success
+Eğer işlem yeni durumda hâlâ geçerliyse tekrar denenebilir. Geçerli değilse kullanıcıya conflict olduğu gösterilir.
 
-Operation is still valid after refresh
-    -> retry only when it is safe
+### Timestamp
 
-States are incompatible
-    -> mark NeedsAttention and show the conflict to the user
-```
+Client cihazının saati tamamen güvenilir kabul edilmemelidir.
 
-A general "last write wins" policy is deliberately avoided because it could silently destroy newer business state.
+Client işlemin yapıldığı zamanı `ClientOccurredAtUtc` olarak gönderir. Ancak server tarafındaki gerçek kayıt zamanı server tarafından oluşturulur ve UTC olarak saklanır.
 
-## Timestamp strategy
+Böylece client zamanı bilgi/audit amaçlı tutulurken sistemdeki asıl timestamp server tarafından belirlenmiş olur.
 
-Device clocks are not trusted as authoritative timestamps.
+### Failed Synchronization
 
-The client records `ClientOccurredAtUtc` so the system can preserve when the user performed the offline action, but the server generates the authoritative acceptance timestamp when synchronization succeeds.
+Hata türüne göre farklı davranılabilir:
 
-Therefore:
+* Network veya 5xx hatalarında daha sonra tekrar denenir.
+* Conflict durumunda güncel veri alınır ve işlem tekrar değerlendirilir.
+* Validation veya geçersiz status hatalarında sürekli retry yapılmaz.
+* Authentication problemi varsa kullanıcı tekrar giriş yapana kadar sync bekletilir.
 
-```text
-ClientOccurredAtUtc = audit/context
-Server timestamp     = authoritative system time
-```
-
-Absolute server timestamps remain UTC. If the product later needs the original offline action time for reporting, it can be stored separately after validation rather than replacing server time.
-
-## Failed synchronization
-
-Failures are classified:
-
-```text
-Network timeout / 5xx
-    -> retry with exponential backoff and jitter
-
-409 concurrency conflict
-    -> refresh and resolve, otherwise NeedsAttention
-
-Validation / invalid transition
-    -> do not retry indefinitely
-
-Authentication failure
-    -> pause sync until authentication is restored
-```
-
-Retry state is persisted locally. The UI should distinguish `Pending`, `Synchronizing`, `Synced` and `Needs Attention` so a locally recorded action is never presented as successfully accepted by the server before synchronization completes.
-
-This design adds local queue management and server-side idempotency tracking, but preserves the existing guarantees around optimistic concurrency, Visit state transitions and transactional outbox delivery.
+UI tarafında da işlemin `Pending`, `Synced` veya `Needs Attention` gibi durumları kullanıcıya gösterilebilir.

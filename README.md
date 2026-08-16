@@ -65,7 +65,13 @@ No local PostgreSQL or .NET installation is required when using Docker.
 
 ## 1. Configure the environment
 
-Create a local `.env` file based on `.env.example`.
+Create a local `.env` file based on `.env.example`:
+
+```bash
+cp .env.example .env
+```
+
+The tracked `.env.example` deliberately uses `ASPNETCORE_ENVIRONMENT=Production` as a deployment-safe default. For the first local bootstrap, change that value to `Development` in the copied `.env` file.
 
 Example:
 
@@ -77,9 +83,9 @@ ASPNETCORE_ENVIRONMENT=Development
 SITE_ADDRESS=fieldops.localhost
 ```
 
-For the initial local bootstrap, `ASPNETCORE_ENVIRONMENT=Development` is intentional.
-
 In Development, the application applies the EF Core migrations and inserts idempotent demo data. Production startup does not automatically mutate the database schema.
+
+Using `Production` against a new, empty local PostgreSQL volume without first applying the migrations will leave the application schema uninitialized.
 
 The real `.env` file is ignored by Git.
 
@@ -105,6 +111,21 @@ The frontend proxies `/api` requests to the backend, so normal browser usage doe
 
 ```bash
 curl 'http://localhost:18080/api/visits?page=1&pageSize=20'
+```
+
+## 4. Verify the local stack
+
+Confirm that PostgreSQL-backed backend health and the frontend API proxy both respond successfully:
+
+```bash
+curl --fail 'http://localhost:18080/health'
+curl --fail 'http://localhost:18081/api/visits?page=1&pageSize=20'
+```
+
+The health endpoint should return:
+
+```json
+{"status":"Healthy"}
 ```
 
 ---
@@ -692,9 +713,34 @@ transactions
 EF Core PostgreSQL mappings
 ```
 
-The completed backend suite contains 153 automated tests covering the critical business and persistence scenarios.
+The completed backend suite contains 162 automated tests covering the critical business and persistence scenarios:
+
+```text
+55 unit tests
+107 PostgreSQL-backed integration tests
+```
 
 100% code coverage was not treated as the goal. Tests were prioritized around correctness-sensitive behavior.
+
+## Running the automated checks
+
+Docker must be running because the integration suite starts PostgreSQL through Testcontainers.
+
+From `backend/`:
+
+```bash
+dotnet restore FieldOps.sln
+dotnet build FieldOps.sln
+dotnet test FieldOps.sln --no-build
+```
+
+From `frontend/`:
+
+```bash
+npm ci
+npm run build
+npm run lint
+```
 
 ---
 

@@ -7,6 +7,7 @@ import { useVisit } from '../../features/visits/queries'
 import { ErrorState } from '../common/ErrorState'
 import { LoadingState } from '../common/LoadingState'
 import { StatusBadge } from '../common/StatusBadge'
+import { CancelVisitAction } from './CancelVisitAction'
 import { CompleteVisitForm } from './CompleteVisitForm'
 import { StartVisitForm } from './StartVisitForm'
 
@@ -90,12 +91,19 @@ export function VisitDetailPanel({
         <StatusBadge status={visit.status} />
       </div>
 
-      {visit.status === 'Planned' ? (
-        <StartVisitForm key={visit.id} visitId={visit.id} />
-      ) : null}
+      {visit.status === 'Planned' || visit.status === 'InProgress' ? (
+        <div key={visit.id} className="visit-actions-group">
+          {visit.status === 'Planned' ? (
+            <StartVisitForm visitId={visit.id} />
+          ) : (
+            <CompleteVisitForm visitId={visit.id} />
+          )}
 
-      {visit.status === 'InProgress' ? (
-        <CompleteVisitForm key={visit.id} visitId={visit.id} />
+          <CancelVisitAction
+            visitId={visit.id}
+            version={visit.version}
+          />
+        </div>
       ) : null}
 
       <dl className="detail-list">

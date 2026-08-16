@@ -121,6 +121,7 @@ export function CreateVisitForm({
             min="1"
             step="1"
             inputMode="numeric"
+            placeholder="1"
             value={employeeIdDraft}
             disabled={createMutation.isPending}
             onChange={(event) => setEmployeeIdDraft(event.target.value)}
@@ -134,6 +135,7 @@ export function CreateVisitForm({
             min="1"
             step="1"
             inputMode="numeric"
+            placeholder="1"
             value={storeIdDraft}
             disabled={createMutation.isPending}
             onChange={(event) => setStoreIdDraft(event.target.value)}

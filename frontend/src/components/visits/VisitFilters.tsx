@@ -114,6 +114,7 @@ export function VisitFilters({ onApply, onClear }: VisitFiltersProps) {
             type="number"
             min="1"
             step="1"
+            placeholder="1"
             value={draft.employeeId}
             onChange={(event) =>
               setDraft((current) => ({
@@ -131,6 +132,7 @@ export function VisitFilters({ onApply, onClear }: VisitFiltersProps) {
             type="number"
             min="1"
             step="1"
+            placeholder="1"
             value={draft.storeId}
             onChange={(event) =>
               setDraft((current) => ({

@@ -8,7 +8,7 @@ import { VisitFilters } from './VisitFilters'
 import type { AppliedVisitFilters } from './VisitFilters'
 import { VisitList } from './VisitList'
 
-const pageSize = 20
+const pageSize = 10
 
 export function VisitListSection() {
   const [appliedFilters, setAppliedFilters] =
@@ -16,6 +16,7 @@ export function VisitListSection() {
   const [page, setPage] = useState(1)
   const [selectedVisitId, setSelectedVisitId] = useState<number | null>(null)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const [isCreateRendered, setIsCreateRendered] = useState(false)
   const [isCreatePending, setIsCreatePending] = useState(false)
   const [filterResetKey, setFilterResetKey] = useState(0)
 
@@ -50,11 +51,14 @@ export function VisitListSection() {
   }
 
   function handleCreateToggle() {
-    if (!isCreateOpen) {
-      setSelectedVisitId(null)
+    if (isCreateOpen) {
+      setIsCreateOpen(false)
+      return
     }
 
-    setIsCreateOpen(!isCreateOpen)
+    setSelectedVisitId(null)
+    setIsCreateRendered(true)
+    setIsCreateOpen(true)
   }
 
   function handleVisitSelect(visitId: number) {
@@ -96,12 +100,23 @@ export function VisitListSection() {
         </button>
       </div>
 
-      {isCreateOpen ? (
-        <CreateVisitForm
-          onCancel={() => setIsCreateOpen(false)}
-          onCreated={handleVisitCreated}
-          onPendingChange={setIsCreatePending}
-        />
+      {isCreateRendered ? (
+        <div
+          className={`create-visit-transition create-visit-transition--${isCreateOpen ? 'enter' : 'exit'}`}
+          onAnimationEnd={() => {
+            if (!isCreateOpen) {
+              setIsCreateRendered(false)
+            }
+          }}
+        >
+          <div className="create-visit-transition__content">
+            <CreateVisitForm
+              onCancel={() => setIsCreateOpen(false)}
+              onCreated={handleVisitCreated}
+              onPendingChange={setIsCreatePending}
+            />
+          </div>
+        </div>
       ) : null}
 
       <div className={workspaceClassName}>

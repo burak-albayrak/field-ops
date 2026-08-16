@@ -1,4 +1,5 @@
 import type {
+  CancelVisitRequest,
   CompleteVisitRequest,
   CreateVisitRequest,
   StartVisitRequest,
@@ -68,6 +69,16 @@ export function startVisit(id: number, request: StartVisitRequest) {
 
 export function completeVisit(id: number, request: CompleteVisitRequest) {
   return apiRequest<Visit>(`/api/visits/${id}/complete`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(request),
+  })
+}
+
+export function cancelVisit(id: number, request: CancelVisitRequest) {
+  return apiRequest<Visit>(`/api/visits/${id}/cancel`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
