@@ -23,12 +23,12 @@ AI'ı yazılım bilen bir arkadaşımla konuşuyor gibi kullanıyorum. Çoğu za
 
 Uzun zamandır chatgpt kullandığım için chatgpt artık benim bir projeye nasıl yaklaştığımı, hangi adımlarımı atacağımı, nasıl ilerlemek istediğimi biliyor ve buna göre hareket ediyor.
 
-Bu sebeple attığım spesifik bir bir prompt yok.
+Bu sebeple attığım spesifik bir prompt tarzı yok. 
 
 Bu projede de chatgpt'yi her zaman kullandığım gibi yani şu şekilde kullandım:
 
 1- Detaylıca tüm projeyi tartıştık. 1. Günümün tamamı projeyi planlamakla geçti. A'dan Z'ye her şeyi düşünüp tasarladık.
-AI'ın burada en büyük faydası olaya farklı açılardan bakmama yardımcı olması oldu.
+AI'ın burada en büyük faydası farklı durumlara farklı açılardan bakmama yardımcı olması oldu.
 
 2- Planlama bittikten sonra projeye start'ı her zaman kendim veririm, her şeyin kurulumunu kendim yaparım.
 
@@ -36,7 +36,7 @@ AI'ın burada en büyük faydası olaya farklı açılardan bakmama yardımcı o
 (bu case'de her görev başında Chatgpt'ye codex tarafında hangi modeli hangi effort'da kullanalım kararını ona bıraktım. O araştırıp seçtiği modele özgü prompt hazırladı.)
 
 4- Bir task agent tarafından tamamlandığında testlerin hepsi geçmiş olsa bile kodlara bakar, lokalimde postman ile çalıştırırım. 
-Artık Agent'lar çok gelişti eskisi kadar hata yakalayamıyorum fakat buna devam etme sebebim bunu yapmadığım zaman projenin implementasyonundan kendimi çok soyutlanmış ve ipler elimden kayacakmış gibi hissetmem.
 
-Bu proje boyunca AI, hatalı veya eksik bir fikirde/implementasyonda bulunmadı. Birçok yerde farklı fikirlerdeydik fakat fikirleri kendine göre mantıklıydı.
-"Özellikle frontend'e create visit eklemeli miyiz?" konusunda çok tartıştık. Onun dışında verdiği önerileri tutarlıydı. Buna rağmen en son kararı her zaman ben verdim.
+Planlama sırasında AI, bir Visit’in başlatılabilmesi için PlannedDate değerinin mağazanın bulunduğu timezone’daki mevcut gün ile aynı olması gerektiğini önerdi. 
+Case’i tekrar kontrol ettiğimde böyle bir requirement olmadığını gördüm. Case yalnızca Visit’in Planned durumda olmasını ve mağazaya maksimum 200 metre uzaklık şartını belirtiyordu. 
+Bu nedenle öneriyi reddettim. Burada ek bir business rule üretmek, verilen requirement’ı uygulamak yerine değiştirmek anlamına gelecekti.
